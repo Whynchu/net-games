@@ -5,12 +5,14 @@
 * ---------------------------------------------------------- *
 ]]--
 
+--tweak movement queue 
 -- tick doesn't handle empty caches properly once all players are gone.
 -- camera slide
 -- error handling is weak
 
 --defaults
 local frame = {} 
+local movement_queue = {}
 frame.Game = Net.EventEmitter.new()
 local last_position_cache = {}
 local stasis_cache = {}
@@ -23,6 +25,7 @@ local avatar_cache = {}
 local framework_active = {}
 local player_stopped = {}
 local ui_elements = {}
+local map_elements = {}
 local movement_locks = {}
 local ui_update = {}
 local countdown_update = {}
@@ -138,9 +141,7 @@ end
 --purpose: excludes bot for everyone except provided player_id
 local function exclude_except_for(player_id,bot_id)
     for i,p_id in next,online_players do 
-        if p_id == player_id then
-            --skip
-        else 
+        if p_id ~= player_id then
             Net.exclude_actor_for_player(p_id, bot_id)
         end 
     end 
@@ -182,7 +183,7 @@ function frame.activate_framework(player_id)
     avatar_cache[player_id]["texture"] = avatar.texture_path
     avatar_cache[player_id]["animation"] = avatar.animation_path
     -- create stunt double
-    Net.create_bot(player_id.."-double", { area_id=area_id, warp_in=false, texture_path=avatar.texture_path, animation_path=avatar.animation_path, x=position.x+0.001+.5, y=position.y+0.001+.5, z=position.z+1, direction=direction, solid=false})
+    Net.create_bot(player_id.."-double", { area_id=area_id, warp_in=false, texture_path=avatar.texture_path, animation_path=avatar.animation_path, x=position.x+0.001+.5, y=position.y+0.001+.5, z=position.z+1, direction=direction, solid=true})
     -- hide player
     Net.set_player_avatar(player_id, empty_texture, empty_animation)
     -- create camera holder
@@ -190,6 +191,7 @@ function frame.activate_framework(player_id)
     -- track camera to "camera" bot
     Net.track_with_player_camera(player_id, player_id.."-camera")
     framework_active[player_id] = true
+    frame.freeze_player(player_id)
 
 end
 
@@ -244,6 +246,11 @@ function frame.freeze_player(player_id)
             --teleport to stasis
             Net.teleport_player(player_id, false, stasis_cache[area_id]["x"]+.5, stasis_cache[area_id]["y"]+.5, stasis_cache[area_id]["z"])
 
+            local keyframes = {{properties={{property="Animation",value="IDLE_"..last_position_cache[player_id]["d"]}},duration=0}}
+            Net.animate_bot(player_id.."-double", "IDLE_"..last_position_cache[player_id]["d"], true)
+            Net.animate_bot_properties(player_id.."-double", keyframes)
+
+            --print('tried to animate bot... IDLE_'..last_position_cache[player_id]["d"])
             --this updates last player position to stasis so a movement isn't triggered on teleport
             if not last_position_cache[player_id] then 
                 last_position_cache[player_id] = {}
@@ -253,7 +260,7 @@ function frame.freeze_player(player_id)
             last_position_cache[player_id]["z"] = tonumber(stasis_cache[area_id]["z"])
             --enable movement in stasis
             Net.unlock_player_input(player_id)
-            print("in-stasis")
+            print(player_id.." is in-stasis.")
         end 
     end 
     end)
@@ -298,8 +305,10 @@ end
 
 --purpose: moves a frozen player from current location to specific cordinates without animation.
 function frame.move_frozen_player(player_id,X,Y,Z)
+    return async(function ()
     local area_id = Net.get_bot_area(player_id.."-double") 
     Net.transfer_bot(player_id.."-double", area_id, false, X+.5, Y+.5, Z+1)
+    end)
 end
 
 --purpose: moves a frozen player from current location to specific cordinates with walking animation. 
@@ -309,8 +318,8 @@ function frame.walk_frozen_player(player_id,X,Y,Z,duration,wait)
         local keyframes = {{properties={{property="X",ease="Linear",value=position.x},{property="Y",ease="Linear",value=position.y},{property="Z",ease="Linear",value=position.z}},duration=0}}
         keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=X+.5},{property="Y",ease="Linear",value=Y+.5},{property="Z",ease="Linear",value=Z+1}},duration=duration}
         Net.move_bot(player_id.."-double",X+.5,Y+.5,Z+1)
-        Net.animate_bot_properties(player_id.."-double", keyframes)
-        if wait ~= true then 
+        --Net.animate_bot_properties(player_id.."-double", keyframes)
+        if wait == true then 
             await(Async.sleep(duration+.5))
         end
     end)
@@ -318,9 +327,10 @@ end
 
 --purpose: animates a frozen player using a specific animation. 
 function frame.animate_frozen_player(player_id,animation_state)
-    local position = Net.get_bot_position(player_id.."-double") 
-    local keyframes = {{properties={{property="Animation",value=animation_state}},duration=.1}}
+    return async(function ()
+    local keyframes = {{properties={{property="Animation",value=animation_state}},duration=1}}
     Net.animate_bot_properties(player_id.."-double", keyframes)
+    end)
 end
 
 --purpose: returns bot_id of player's frozen avatar
@@ -433,6 +443,61 @@ function frame.slide_camera_position(player_id,X,Y,Z,duration)
 
 end
 
+-- MAP FUNCTIONS
+-- Functions to add, animate, and remove objects based on map position (for world elements especially those visible to other players)
+
+function frame.add_map_element(name,player_id,texture,animation,animation_state,X,Y,Z,exclude)
+    
+    --SPRITE NOTES
+       --Your .animation file must have all of the standard animation states, but no frame data for them,
+       --else your UI will flicker between your selected animation_state and the default run/walk for that direction.
+       --See the /assets/net-games/text_cursor.animation if this doesn't make sense.
+
+    --spawn map object
+    Net.create_bot(player_id.."-map-"..name, { area_id=area_id, warp_in=false, texture_path=texture, animation_path=animation, animation=animation_state,x=X, y=Y, z=Z, solid=false})
+
+    if exclude == true then
+        exclude_except_for(player_id,player_id.."-map-"..name)
+    end 
+    
+    Net.animate_bot(player_id.."-map-"..name, animation_state, true)
+
+    --includes map element in map_elements cache for player so we can track updates and removal  
+    if map_elements[player_id] == nil then
+        map_elements[player_id] = {}
+    end 
+    map_elements[player_id][name] = {}
+    map_elements[player_id][name]["name"] = name
+    map_elements[player_id][name]["state"] = animation_state
+    map_elements[player_id][name]["id"] = player_id.."-ui-"..name    
+    map_elements[player_id][name]["Z"] = Z
+    map_elements[player_id][name]["X"] = X
+    map_elements[player_id][name]["Y"] = Y
+end
+
+function frame.change_map_element(name,player_id,animation_state,loop)
+    if Net.is_bot(player_id.."-map-"..name) then
+        Net.Net.animate_bot(player_id.."-map-"..name, animation_state,loop)
+
+    else
+        print("[games] Come on, "..name.." isn't a map element for that player!")
+    end 
+end
+
+function frame.move_map_element(name,player_id,X,Y,Z)
+    local area_id = Net.get_bot_area(player_id.."-camera") 
+    Net.transfer_bot(player_id.."-map-"..name, area_id, false, X, Y, Z)
+end
+
+--purpose: removes UI element from screen
+function frame.remove_map_element(name,player_id)
+    if Net.is_bot(player_id.."-map-"..name) then 
+        map_elements[player_id][name] = nil
+        Net.remove_bot(player_id.."-map-"..name)
+    end
+end
+
+
 -- UI FUNCTIONS
 -- Functions to add, animate, and remove sprites based on camera's view (not map position)
 
@@ -467,9 +532,8 @@ function frame.add_ui_element(name,player_id,texture,animation,animation_state,h
     local y = cam_position.y + yoffset
     local z = 100 + Z
     Net.create_bot(player_id.."-ui-"..name, { area_id=area_id, warp_in=false, texture_path=texture, animation_path=animation, animation=animation_state,x=x-.5, y=y-.5, z=z, solid=false})
-    exclude_except_for(player_id,player_id.."-ui-"..name)
 
-    --ADD: we need to exclude bot for all players except player_id
+    exclude_except_for(player_id,player_id.."-ui-"..name)
 
     Net.animate_bot(player_id.."-ui-"..name, animation_state, true)
 
@@ -515,13 +579,15 @@ function frame.move_ui_element(name,player_id,horizontalOffset,verticalOffset,Z)
     local z = 100 + Z
     ui_elements[player_id][name]["xoffset"] = xoffset
     ui_elements[player_id][name]["yoffset"] = yoffset
-    Net.transfer_bot(player_id.."-ui-"..name, area_id, false, x-.5, y-.5, z-1)
+    Net.transfer_bot(player_id.."-ui-"..name, area_id, false, x-.5, y-.5, z)
 end
 
 --purpose: removes UI element from screen
-function frame.remove_ui_element(player_id,name)
-    ui_elements[player_id][name] = nil
-    Net.remove_bot(player_id.."-ui-"..name)
+function frame.remove_ui_element(name,player_id)
+    if Net.is_bot(player_id.."-ui-"..name) then 
+        ui_elements[player_id][name] = nil
+        Net.remove_bot(player_id.."-ui-"..name)
+    end
 end
 
 -- CURSOR FUNCTIONS
@@ -540,10 +606,12 @@ function frame.spawn_cursor(cursor_id,player_id,options)
     local texture = options["texture"]
     local animation = options["animation"]
     local area_id = Net.get_bot_area(player_id.."-camera") 
-    if cursor_cache[player_id] ~= nil then if next(cursor_cache[player_id]) ~= nil then
+    if cursor_cache[player_id] ~= nil then if next(cursor_cache[player_id]) ~= nil then if cursor_cache[player_id] ~= {} then
+        --print(cursor_cache[player_id])
         print("[games] You already got a cursor for that user, remove it first.") 
         return 
     end 
+    end
     end 
     --add cursor to cache 
     cursor_cache[player_id] = {}
@@ -574,7 +642,7 @@ end
 
 --purpose: removes a cursor and clears cursor_cache for player
 function frame.remove_cursor(cursor_id,player_id)
-    cursor_cache[player_id] = {}
+    cursor_cache[player_id] = nil
     Net.remove_bot(player_id.."-cursor-"..cursor_id)
     frame.unfreeze_player(player_id)
 end
@@ -586,7 +654,7 @@ frame.Game:on("button_press", function(event)
         if cursor_cache[event.player_id]["locked"] == false then
             local cursor = cursor_cache[event.player_id]
             local direction = cursor["movement"]
-            print(event.button)
+            --print(event.button)
             --if directional button emit move
             if ((event.button == "D" or event.button == "U") and direction=="vertical") or
             ((event.button == "L" or event.button == "R") and direction=="horizontal") or
@@ -607,7 +675,6 @@ end)
 --purpose: handles cursor movement logic
 --usage: for framework only, use the Game:on("cursor_hover") to respond to cursor movements.
 frame.Game:on("cursor_move", function(event)
-    print("move")
     local last_selection = cursor_cache[event.player_id]["current"]
     if event.button == "L" or event.button == "LS" or event.button == "U" then
         if last_selection == 1 then
@@ -1175,7 +1242,7 @@ end
 
 --purpose: write text on screen based on position
 --status: WORKING, spacing issue persists
-function frame.write_text(text_id,player_id,font,color,text,verticalOffset,horizontalOffset,Z)
+function frame.write_text(text_id,player_id,font,color,text,horizontalOffset,verticalOffset,Z)
 
     local fonts = {"WIDE","BATTLE"} --contains letters and numbers
     local lowers = {"SMALL","THIN","THICK","TINY"} --contains _LOWER varient too
@@ -1248,7 +1315,7 @@ function frame.write_text(text_id,player_id,font,color,text,verticalOffset,horiz
         elseif font == "THICK" then offset = 1.3
         elseif font == "SMALL" then offset = 1.3
         end
-        xoffset,yoffset = convertOffsets(horizontalOffset+rolling+offset,verticalOffset,tonumber(Z))
+        xoffset,yoffset = convertOffsets(horizontalOffset+rolling+offset,verticalOffset-10,tonumber(Z))
         rolling = rolling + letter["width"]+offset
         xoffset,yoffset = fixOffsets(xoffset,yoffset)
         --add to text_cache
@@ -1263,7 +1330,7 @@ function frame.write_text(text_id,player_id,font,color,text,verticalOffset,horiz
         if color == "black" then
             extra = "_dark"
         end 
-        Net.create_bot(player_id.."-text-"..text_id.."-"..tostring(i), { area_id=area_id, warp_in=false, texture_path="/server/assets/net-games/fonts"..extra.."_compressed.png", animation_path="/server/assets/net-games/fonts"..extra.."_compressed.animation",animation=letter["name"], x=position.x+data["xoffset"]-.5, y=position.y+data["yoffset"]-.5, z=tonumber(text_cache[player_id][text_id]["z"]+100), solid=false})
+        Net.create_bot(player_id.."-text-"..text_id.."-"..tostring(i), { area_id=area_id, warp_in=false, texture_path="/server/assets/net-games/fonts"..extra.."_compressed.png", animation_path="/server/assets/net-games/fonts"..extra.."_compressed.animation",animation=letter["name"], x=position.x+data["xoffset"]-.5, y=position.y+data["yoffset"]-.5, z=tonumber(Z+100), solid=false})
         exclude_except_for(player_id,player_id.."-text-"..text_id.."-"..tostring(i))
         i=i+1
 
@@ -1272,6 +1339,7 @@ end
 
 --purpose: remove existing text from screen
 function frame.erase_text(text_id,player_id)
+return async(function ()
     --remove all bots associated with this text-line
     if text_cache[player_id] ~= nil then for i,label in next,text_cache[player_id] do
         for i,letter in next,label["letters"] do 
@@ -1281,6 +1349,7 @@ function frame.erase_text(text_id,player_id)
     end 
     --clear the cache
     text_cache[player_id][text_id] = nil
+end)
 end 
 
 -- COUNTDOWN FUNCTIONS
@@ -1379,6 +1448,7 @@ function frame.remove_countdown(player_id)
         Net.remove_bot(player_id.."-countdown-m1")
         Net.remove_bot(player_id.."-countdown-m2")
         countdown_cache[player_id] = nil
+        countdown_update[player_id] = nil
     else 
         print("Doesn't look like this player has a countdown active.")
     end
@@ -1675,16 +1745,24 @@ end
 
 --purpose: checks player movements as they happen
 --usage: called automatically by Net:on("player_move")
-local function process_movement(player_id, x, y, z)
-    return async(function ()
+
+local function process_movement_event(player_id,x,y,z)
     local area_id = Net.get_player_area(player_id) 
     local position = stasis_cache[area_id]
+    local direction = ""
+    local speed = ""
+    local speed_match = false
+    local speed_match = false
 
     if not last_position_cache[player_id] then 
         last_position_cache[player_id] = {}
         last_position_cache[player_id]["x"] = tonumber(x)
         last_position_cache[player_id]["y"] = tonumber(y)
         last_position_cache[player_id]["z"] = tonumber(z)
+        last_position_cache[player_id]["d"] = ""
+        last_position_cache[player_id]["pd"] = ""
+        last_position_cache[player_id]["s"] = ""
+        last_position_cache[player_id]["ps"] = ""
         return
     end
      
@@ -1741,33 +1819,84 @@ local function process_movement(player_id, x, y, z)
     elseif (x - last_position_cache[player_id]["x"]) < -.01 and (y - last_position_cache[player_id]["y"]) > .01 then
         speed = "walk"
         direction = "L"
+    else
+        direction="D"
     end 
+
+    --direction reported by Net.get_player_direction() is delayed so can't be used or visuals get out of sync.
+    --direction = simple_direction(Net.get_player_direction(player_id))
     last_position_cache[player_id]["x"] = tonumber(x)
     last_position_cache[player_id]["y"] = tonumber(y)
     last_position_cache[player_id]["z"] = tonumber(z)
+    --log previous direction for tracking
+    if last_position_cache[player_id]["d"] ~= "" then
+        if last_position_cache[player_id]["pd"] ~= "" then
+            if last_position_cache[player_id]["pd"] == last_position_cache[player_id]["d"] then 
+                --same direction from last event
+                direction_match = true
+            else 
+                --different direction from last event
+                direction_match = false
+            end 
+        end 
+        last_position_cache[player_id]["pd"] = last_position_cache[player_id]["d"]
+    end 
+    --set current direction
     last_position_cache[player_id]["d"] = direction
+    --log previous speed for tracking
+    if last_position_cache[player_id]["s"] ~= "" then
+        if last_position_cache[player_id]["ps"] ~= "" then
+            if last_position_cache[player_id]["ps"] == last_position_cache[player_id]["s"] then 
+                --same speed from last event
+                speed_match = true
+            else 
+                --different speed from last event
+                speed_match = false
+            end 
+        end 
+        last_position_cache[player_id]["ps"] = last_position_cache[player_id]["s"]
+    end 
+    --set current speed
+    last_position_cache[player_id]["s"] = speed
 
     if direction ~= "" then
             frame.Game:emit("button_press", {player_id = player_id, button = direction})
     end
+    if speed_match == true and direction_match == true then
+        return true
+    else 
+        return false
+    end
+end 
+
+local function process_movement(player_id, x, y, z)
+    return async(function ()
+    local area_id = Net.get_player_area(player_id) 
+    local position = stasis_cache[area_id]
+    local direction = last_position_cache[player_id]["d"]
+    local speed = last_position_cache[player_id]["s"]
+
     --function to handle moving camera, stunt double, and UI
-    if movement_locks[player_id] then 
-        print("[games] How did you even trigger this? Shouldn't ever happen.")
-        return 
+    if movement_locks[player_id] ~= nil then 
+        --print("[games] How did you even trigger this? Shouldn't ever happen.")
+        return
     end
     movement_locks[player_id] = true
+    
     if track_player[player_id] == nil then
         track_player[player_id] = true
     end 
     if framework_active[player_id] ~= nil then if framework_active[player_id] == true then
+        --if player frozen
         if frozen[player_id] ~= nil then if frozen[player_id] == true then
             --if player frozen, move back to center of stasis. 
             last_position_cache[player_id]["x"] = tonumber(position.x+.5)
             last_position_cache[player_id]["y"] = tonumber(position.y+.5)
             last_position_cache[player_id]["z"] = tonumber(position.z)
             Net.teleport_player(player_id, false, position.x+.5, position.y+.5, position.z)
+
+        --if camera or UI isn't tracked to player (when moving camera w/ UI but not player)
         elseif track_player[player_id] == false then
-            --don't track camera or UI to player 
 
             --move stunt double
             local newposition = Net.get_bot_position(player_id.."-camera")
@@ -1829,19 +1958,32 @@ local function process_movement(player_id, x, y, z)
             end
 
         elseif direction ~= "" then
+
+            print("Player should be frozen when framework active, this shouldn't trigger.")
+
+            --we are diabling UI while moving so commenting this out for now
+            --the fix for the lag may be presume long term movement in a single direction then stop if no player movement but can't get it to work right. 
+            
+            --[[
+            local xoffset = 0
+            local yoffset = 0
+            if direction == "d" then
+                xoffset = 10
+                yoffset = 10
+            end 
             --player isn't frozen so track camera bot and stunt double to player movement
             local stunt_position = Net.get_bot_position(player_id.."-double") 
             local camera_position = Net.get_bot_position(player_id.."-camera") 
             local animation = tostring(string.upper(speed.."_"..direction))
             local keyframes = {{properties={{property="Animation",value=animation},{property="X",ease="Linear",value=stunt_position.x},{property="Y",ease="Linear",value=stunt_position.y},{property="Z",ease="Linear",value=stunt_position.z}},duration=0}}
-            keyframes[#keyframes+1] = {properties={{property="Animation",value=animation},{property="X",ease="Linear",value=x+.5},{property="Y",ease="Linear",value=y+.5},{property="Z",ease="Linear",value=z+1}},duration=.1}
+            keyframes[#keyframes+1] = {properties={{property="Animation",value=animation},{property="X",ease="Linear",value=x+.5+xoffset},{property="Y",ease="Linear",value=y+.5+yoffset},{property="Z",ease="Linear",value=z+1}},duration=.1+10}
             Net.move_bot(player_id.."-double",z,z,z+1)
             Net.animate_bot_properties(player_id.."-double", keyframes)
             local keyframes = {{properties={{property="X",ease="Linear",value=stunt_position.x},{property="Y",ease="Linear",value=stunt_position.y},{property="Z",ease="Linear",value=stunt_position.z}},duration=0}}
-            keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=x+.5},{property="Y",ease="Linear",value=y+.5},{property="Z",ease="Linear",value=z+1}},duration=.1}
+            keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=x+.5+xoffset},{property="Y",ease="Linear",value=y+.5+yoffset},{property="Z",ease="Linear",value=z+1}},duration=.1+10}
             Net.move_bot(player_id.."-camera",z,z,z+1)
             Net.animate_bot_properties(player_id.."-camera", keyframes)
-
+            ]]--
             --move all active UI elements to track with camera
             if ui_elements[player_id] ~= nil then for name,element in next,ui_elements[player_id] do
                 local newposition = Net.get_bot_position(player_id.."-ui-"..name)
@@ -1914,7 +2056,6 @@ local function process_movement(player_id, x, y, z)
                 end
             end
 
-
         end
         end
     end
@@ -1985,7 +2126,7 @@ Net:on("player_join", function(event)
     if next(cursor_cache) ~= nil then
         for player_id,cursor in next,cursor_cache do
             if next(cursor) ~= nil then
-                print(cursor)
+                --print(cursor)
                 Net.exclude_actor_for_player(event.player_id, player_id.."-cursor-"..cursor["name"])
             end 
         end 
@@ -1994,7 +2135,7 @@ Net:on("player_join", function(event)
 end)
 
 Net:on("actor_interaction", function(event)
-    print(Net.get_bot_position(event.actor_id))
+    --print(Net.get_bot_position(event.actor_id))
     --emits event on A and L Shoulder press.
     process_button_press(event.player_id,event.button)
 end)
@@ -2069,6 +2210,7 @@ Net:on("player_disconnect", function(event)
 end)
 
 Net:on("tick", function(event)
+
     --update each unpaused countdown for each player
     if next(countdown_cache) ~= nil then
         for player_id,countdown in next,countdown_cache do
@@ -2146,6 +2288,21 @@ Net:on("tick", function(event)
             end 
         end 
     end
+
+    --if there are movements to process process the oldest one
+
+    --[[
+    if next(movement_queue) ~= nil then 
+        for player_id,movements in next,movement_queue do
+            if next(movement_queue[player_id]) ~= nil then 
+                local movement = movement_queue[player_id][1]
+                process_movement(player_id,movement["x"],movement["y"],movement["z"])
+                movement_queue[player_id] = nil
+            end
+        end
+    end
+    ]]--
+
     --tick tracker for UI updates
     previous_tick = tick_gap
     tick_gap = tick_gap - 1
@@ -2160,6 +2317,8 @@ Net:on("tick", function(event)
     end
     
     --tracks if frameworked players stops moving and sets their stunt double to proper idle animation 
+
+    
     if next(player_stopped) ~= nil then
         for player_id,player_data in next,player_stopped do
             if framework_active[player_id] ~= false then 
@@ -2167,6 +2326,8 @@ Net:on("tick", function(event)
                     local direction = last_position_cache[player_id]["d"]
                     local keyframes = {{properties={{property="Animation",value="IDLE_"..direction}},duration=0}}
                     Net.animate_bot_properties(player_id.."-double", keyframes)
+                    Net.animate_bot(player_id.."-double", "IDLE_"..direction, true)
+
                     player_stopped[player_id] = -1
                 end 
                 if player_stopped[player_id] > 0 then
@@ -2175,6 +2336,7 @@ Net:on("tick", function(event)
             end 
         end 
     end 
+
 end)
 
 Net:on("player_move", function(event)
@@ -2183,18 +2345,35 @@ Net:on("player_move", function(event)
         if frozen[event.player_id] == true then
             player_stopped[event.player_id] = -1
         else
+            ui_update[event.player_id] = nil
+            countdown_update[event.player_id] = nil
+            timer_update[event.player_id] = nil
             player_stopped[event.player_id] = 3
         end  
     else 
         player_stopped[event.player_id] = 3
     end 
-    
+
     --clears ui, countdown, and timer updates as updates will occur within this function call
-    ui_update[event.player_id] = nil
-    countdown_update[event.player_id] = nil
-    timer_update[event.player_id] = nil
+
     --emits event on d-pad press
-    process_movement(event.player_id, event.x,event.y,event.z)
+    local match = process_movement_event(event.player_id,event.x,event.y,event.z)
+    --print(match)
+    if match == false then 
+
+        if movement_queue[event.player_id] == nil then 
+            movement_queue[event.player_id] = {}
+            movements = 0
+        else 
+            movements = #movement_queue[event.player_id]
+        end 
+        movement_queue[event.player_id][movements+1] = {}
+        movement_queue[event.player_id][movements+1]["x"] = event.x
+        movement_queue[event.player_id][movements+1]["y"] = event.y
+        movement_queue[event.player_id][movements+1]["z"] = event.z
+
+    end
+
     --if a cursor is currently spawned we need to emit a cursor_move event to move the cursor between positions
 end)
 
