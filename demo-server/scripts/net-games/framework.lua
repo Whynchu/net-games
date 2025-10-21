@@ -710,11 +710,11 @@ function frame.add_ui_element(name,player_id,texture,animation,animation_state,h
        --verticalOffset and horizontalOffset are relative to center of camera (not map)
        --camera size = 240 wide x 160 tall thus:
           --top left = 0,0
-          --top middle = 0,80
-          --top right = 0,160
+          --top middle = 120,0
+          --top right = 240,0
           --middle = 120,80
-          --bottom left = 240,0
-          --bottom middle = 240,80
+          --bottom left = 0,160
+          --bottom middle = 120,160
           --bottom right = 240,160
 
     --get position of camera 
