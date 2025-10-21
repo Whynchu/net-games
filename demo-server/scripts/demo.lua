@@ -7,44 +7,45 @@
 ]]--
 
 --the below lines are required to start and access the framework
---local games = require("scripts/net-games/framework")
 local games = require("scripts/net-games/framework")
---games.start_framework()
+games.start_framework()
 
 --the rest is demo code for the demo server
 local points = 8
-local active = {} 
+local bat_active = {} 
 
-Net.create_bot("bat", { area_id="default", warp_in=false, texture_path="/server/assets/demo/cyber_bat.png", animation_path="/server/assets/demo/cyber_bat.animation", x=26, y=21, z=0, solid=true})
+Net.create_bot("bat", { area_id="default", warp_in=false, texture_path="/server/assets/cyber_bat.png", animation_path="/server/assets/cyber_bat.animation", x=26, y=21, z=0, solid=true})
 
 Net:on("player_join", function(event)
-    active[event.player_id] = false
+    bat_active[event.player_id] = false
+
 end)
 
 Net:on("player_disconnect", function(event)
-    active[event.player_id] = false
+    bat_active[event.player_id] = false
 end)
 
 Net:on("actor_interaction", function (event)
 
-    if event.actor_id == "bat" and active[event.player_id] == false then
+    if event.actor_id == "bat" and bat_active[event.player_id] == false then
         Net.message_player(event.player_id, "I grant you 8 Order Points. Press LS to remove then one by one. But don't talk to Simon until you've spoken to me again.","","") 
         games.activate_framework(event.player_id)
-        games.add_ui_element("points",event.player_id,"/server/assets/demo/order_points.png","/server/assets/demo/order_points.animation","8POINT",40,60,0)
-        active[event.player_id] = true
-    elseif event.actor_id == "bat" and active[event.player_id] == true then
+        --games.add_ui_element("points",event.player_id,"/server/assets/demo/order_points.png","/server/assets/demo/order_points.animation","8POINT",40,60,0)
+        games.add_ui_element("points",event.player_id,"/server/assets/demo/order_points.png","/server/assets/demo/order_points.animation","8POINT",160,18,0)
+        bat_active[event.player_id] = true
+    elseif event.actor_id == "bat" and bat_active[event.player_id] == true then
         Net.message_player(event.player_id, "Let me get rid of that UI for you.","","") 
         games.deactivate_framework(event.player_id)
-        active[event.player_id] = false
+        bat_active[event.player_id] = false
         Net.message_player(event.player_id, "Now you can talk to Simon.","","") 
-        active[event.player_id] = false
+        bat_active[event.player_id] = false
     end
 
 end)
 
-games.Game:on("button_press", function(event)
+Net:on("button_press", function(event)
 
-    if event.button == "LS" and active[event.player_id] == true then
+    if event.button == "LS" and bat_active[event.player_id] == true then
         if points > 0 then
             points = points - 1 
             games.change_ui_element("points",event.player_id,tostring(points.."POINT"),true)
@@ -53,6 +54,11 @@ games.Game:on("button_press", function(event)
             games.change_ui_element("points",event.player_id,tostring(points.."POINT"),true)
         end 
     end
+    
+    if event.button == "A" and bat_active[event.player_id] == true then
+        games.slide_ui_element("points",event.player_id,0,0,5)
+    end 
+
 
     --[[
             local green_cursor_texture = "/server/assets/net-games/text_cursor.png"
@@ -73,7 +79,7 @@ games.Game:on("button_press", function(event)
             --games.start_timer(event.player_id)
 end)
 
-games.Game:on("cursor_selection", function(event)
+Net:on("cursor_selection", function(event)
     if event.cursor == "navi_select" then
         print("Player ".. event.player_id .." used cursor "..event.cursor.." to select "..event.selection["name"])
         games.erase_text("navi_label_bat",event.player_id)
@@ -86,14 +92,14 @@ games.Game:on("cursor_selection", function(event)
     end
 end)
 
-games.Game:on("cursor_hover", function(event)
+Net:on("cursor_hover", function(event)
    print("Player ".. event.player_id .."used cursor "..event.cursor.." to hover over "..event.selection["name"])
 end)
 
-games.Game:on("button_press", function(event)
+Net:on("button_press", function(event)
     --print("Player ".. event.player_id .." pressed: "..event.button)
 end)
 
-games.Game:on("countdown_ended", function(event)
+Net:on("countdown_ended", function(event)
     print("Countdown for player "..event.player_id.." finished.")
 end)
