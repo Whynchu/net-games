@@ -7,11 +7,10 @@
 
 --[[ REQUIRED VARIABLES AND DEFAULTS ]]--
 local games = require("scripts/net-games/framework")
-games.start_framework()
 
-local simon_cache = {}
-local simon_players = {}
-local simon_optional_properties = {"NPC","NPC Mug","Time","Limit"}
+local simon_cache = {} --contains information on all Simon Says NPCs
+local simon_players = {} --contains all players currently playing Simon Says
+local simon_optional_properties = {"NPC","NPC Mug","Time","Limit"} --optional parameters for "Simon Says" Tiled Objects
 local defaults = {
     time_limit = 60,
     default_npc = "/server/assets/simon-says/normal-navi-bn4_green",
@@ -116,7 +115,7 @@ end)
 --[[ GAME LOGIC ]]--
 --[[ The actual code that runs the game ]]--
 
---purpose: handles selecing a new button for Simon to say
+--purpose: handles selecting a new button for Simon to say
 local function simon_says_press(player_id)
     return async(function ()
         local actor_id = simon_players[player_id]["actor"]
@@ -137,7 +136,7 @@ local function simon_says_press(player_id)
     end)
 end 
 
---purpose: Handles initial interaction with the Simon Says and starts the game if the player choses to play
+--purpose: Handles initial interaction with the Simon Says and starts the game if the player chooses to play
 local function greet_simon(actor_id,player_id)
     return async(function ()
     local area_id = Net.get_player_area(player_id)
@@ -164,17 +163,18 @@ local function greet_simon(actor_id,player_id)
         end 
         simon_players[player_id]["actor"] = actor_id
         simon_players[player_id]["area"] = area_id
-        --await(games.walk_frozen_player(player_id,simon.x+.5,simon.y,simon.z,1,true))
-        --games.animate_frozen_player(player_id,"IDLE_UL")
         Net.fade_player_camera(player_id, {r=0,g=0,b=0,a=255}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
         await(Async.sleep(.75))
-        games.activate_framework(player_id)
+        Net.toggle_player_hud(player_id)
         games.freeze_player(player_id)
-        games.add_ui_element("board",player_id,"/server/assets/simon-says/board.png","/server/assets/simon-says/board.animation","UI",3,20,-1)
+        games.add_ui_element("board",player_id,"/server/assets/simon-says/board.png","/server/assets/simon-says/board.animation","UI",2,2,100)
+        --the below line currently cases a teleport
         await(games.move_frozen_player(player_id,simon.x+.5,simon.y,simon.z))
         await(games.animate_frozen_player(player_id,"IDLE_UL"))
-        games.spawn_countdown(player_id,24,34,0,simon.custom_properties["Time"])
-        games.write_text("simon_says_answers",player_id,"THICK","","00",35,67,1)
+        games.spawn_countdown(player_id,"simon_says",22,15,simon.custom_properties["Time"]+1,false)
+        await(Async.sleep(.1))
+        games.pause_countdown(player_id,"simon_says")
+        games.draw_text(player_id,"simon_says_answers","00",32,39,100,"THICK")
         Net.fade_player_camera(player_id, {r=0,g=0,b=0,a=0}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
         await(Async.sleep(.75))
         Net.unlock_player_input(player_id)
@@ -196,7 +196,7 @@ local function greet_simon(actor_id,player_id)
         Net.play_sound_for_player(player_id, "/server/assets/simon-says/game_start.ogg")
         games.add_map_element("chat",player_id,"/server/assets/simon-says/chat.png","/server/assets/simon-says/chat.animation","UI",simon.x-.8,simon.y-1.1,simon.z)
 
-        games.start_countdown(player_id)
+        games.resume_countdown(player_id,"simon_says")
         simon_players[player_id]["score"] = 0
         games.add_map_element("indicator",player_id,"/server/assets/simon-says/indicators.png","/server/assets/simon-says/indicators.animation","IDLE_UL",100,100,simon.z+2)
         await(Async.sleep(.05))
@@ -233,11 +233,10 @@ Net:on("button_press", function(event)
             simon_players[event.player_id]["active"] = false
             Net.play_sound_for_player(event.player_id, "/server/assets/simon-says/correct.ogg")
             simon_players[event.player_id]["score"] = simon_players[event.player_id]["score"] + 1            
-            await(games.erase_text("simon_says_answers",event.player_id))
             if simon_players[event.player_id]["score"] < 10 then
-                games.write_text("simon_says_answers",event.player_id,"THICK","","0"..tostring(simon_players[event.player_id]["score"]),35,67,1)
+                games.update_text(event.player_id, "simon_says_answers","0"..tostring(simon_players[event.player_id]["score"]))
             else
-                games.write_text("simon_says_answers",event.player_id,"THICK","",simon_players[event.player_id]["score"],35,67,1)
+                games.update_text(event.player_id, "simon_says_answers",tostring(simon_players[event.player_id]["score"]))
             end 
             local area_id = Net.get_player_area(event.player_id)
             local actor_id = simon_players[event.player_id]["actor"]
@@ -245,14 +244,16 @@ Net:on("button_press", function(event)
 
             --limit has not been reached, loop again
             if simon_players[event.player_id]["score"] < tonumber(simon.custom_properties["Limit"]) then
-                await(Async.sleep(.05))
+                await(Async.sleep(.08))
                 simon_says_press(event.player_id)
 
             --limit has been reached, end game as winner
             elseif simon_players[event.player_id]["score"] >= tonumber(simon.custom_properties["Limit"]) then
+
+                --Net:emit("game_complete",{player_id=event.player_id,game="Simon Says (Easy)", status="win"})
                 Net.unlock_player_input(event.player_id)
 
-                games.pause_countdown(event.player_id)
+                games.pause_countdown(event.player_id,"simon_says")
                 Net.play_sound_for_player(event.player_id, "/server/assets/simon-says/succeed.ogg")
                 simon_players[event.player_id]["active"] = false
                 await(Async.message_player(event.player_id, "Wonderful!! Congratulations!!", simon.custom_properties["NPC Mug Texture"], simon.custom_properties["NPC Mug Animation"]))
@@ -261,9 +262,10 @@ Net:on("button_press", function(event)
                 games.remove_ui_element("board",event.player_id)
                 games.remove_map_element("chat",event.player_id)
                 games.remove_map_element("indicator",event.player_id)
-                games.remove_countdown(event.player_id)
-                await(games.erase_text("simon_says_answers",event.player_id))
-                games.deactivate_framework(event.player_id)
+                games.remove_countdown(event.player_id,"simon_says")
+                games.remove_text("simon_says_answers",event.player_id)
+                games.unfreeze_player(event.player_id)
+                Net.toggle_player_hud(player_id)
                 Net.fade_player_camera(event.player_id, {r=0,g=0,b=0,a=0}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
                 await(Async.sleep(.75))
 
@@ -314,25 +316,26 @@ end)
 
 Net:on("countdown_ended", function(event)
     return async(function ()
-    simon_players[event.player_id]["active"] = false
-    --time limit reached, end game as loser
-    local area_id = Net.get_player_area(event.player_id)
-    local actor_id = simon_players[event.player_id]["actor"]
-    simon_cache[area_id][actor_id]['occupied'] = false
-    simon_players[event.player_id] = nil
-    local simon = simon_cache[area_id][actor_id]
-    Net.play_sound_for_player(event.player_id, "/server/assets/simon-says/time_up.ogg")
-    await(Async.message_player(event.player_id, "Too bad!! And you were so close, too. Please play again soon!", simon.custom_properties["NPC Mug Texture"], simon.custom_properties["NPC Mug Animation"]))
-    Net.fade_player_camera(event.player_id, {r=0,g=0,b=0,a=255}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
-    await(Async.sleep(.75))
-    games.remove_map_element("indicator",event.player_id)
-    games.remove_ui_element("board",event.player_id)
-    games.remove_map_element("chat",event.player_id)
-    games.erase_text("simon_says_answers",event.player_id)
-    games.remove_countdown(event.player_id)
-
-    games.deactivate_framework(event.player_id)
-    Net.fade_player_camera(event.player_id, {r=0,g=0,b=0,a=0}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
-    await(Async.sleep(.75))
+        simon_players[event.player_id]["active"] = false
+        --time limit reached, end game as loser
+        Net:emit("game_complete",{player_id=event.player_id,game="Simon Says (Easy)", status="loss"})
+        local area_id = Net.get_player_area(event.player_id)
+        local actor_id = simon_players[event.player_id]["actor"]
+        simon_cache[area_id][actor_id]['occupied'] = false
+        simon_players[event.player_id] = nil
+        local simon = simon_cache[area_id][actor_id]
+        Net.play_sound_for_player(event.player_id, "/server/assets/simon-says/time_up.ogg")
+        await(Async.message_player(event.player_id, "Too bad!! And you were so close, too. Please play again soon!", simon.custom_properties["NPC Mug Texture"], simon.custom_properties["NPC Mug Animation"]))
+        Net.fade_player_camera(event.player_id, {r=0,g=0,b=0,a=255}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
+        await(Async.sleep(.75))
+        games.remove_map_element("indicator",event.player_id)
+        games.remove_ui_element("board",event.player_id)
+        games.remove_map_element("chat",event.player_id)
+        games.remove_text(event.player_id,"simon_says_answers")
+        games.remove_countdown(event.player_id,"simon_says")
+        games.unfreeze_player(event.player_id)
+        Net.toggle_player_hud(player_id)
+        Net.fade_player_camera(event.player_id, {r=0,g=0,b=0,a=0}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
+        await(Async.sleep(.75))
     end)
 end)
