@@ -4,10 +4,6 @@
 	     https://github.com/indianajson/net-games/   
 * ---------------------------------------------------------- *
 
-TO DO
-  * retest all functions (see if anything is missing)
-  * rewrite API docs
-
 ]]--
 
 local Displayer = require("scripts/net-games/displayer/displayer") --module by D3str0y3d to handle text, timers, countdowns using v2.1
@@ -259,7 +255,7 @@ end
 
 function frame.change_map_element(name,player_id,animation_state,loop)
     if Net.is_bot(player_id.."-map-"..name) then
-        Net.Net.animate_bot(player_id.."-map-"..name, animation_state,loop)
+        Net.animate_bot(player_id.."-map-"..name, animation_state,loop)
 
     else
         print("[games] Come on, "..name.." isn't a map element for that player!")
@@ -411,7 +407,7 @@ end
 --purpose: slide an existing UI element across the screen over a specified duration
 function frame.slide_ui_element(sprite_id,player_id,X,Y,duration)
     print("slide_ui_element() is not yet supported.")
-    local element = ui_cache[player_id][sprite_id]
+    --local element = ui_cache[player_id][sprite_id]
     return 
     --add move to ui_update table
 end
@@ -423,21 +419,21 @@ function frame.detach_camera(player_id)
 end
 
 --purpose: removes UI element from screen
-function frame.remove_ui_element(sprite_id,player_id)
+function frame.remove_ui_element(player_id,sprite_id)
     Net.player_erase_sprite(player_id, sprite_id .. "_obj")
 end
 
 -- TEXT FUNCTIONS
 
-function frame.draw_text(player_id,text_id,text,x,y,z,font,scale)
+function frame.draw_text(text_id,player_id,text,x,y,z,font,scale)
     Displayer.Text.drawText(player_id, text_id, text, tonumber(x)*2, tonumber(y)*2, z, font, scale)
 end
 
-function frame.update_text(player_id,text_id,text)
+function frame.update_text(text_id,player_id,text)
     Displayer.Text.updateText(player_id, text_id, tostring(text))
 end
 
-function frame.remove_text(player_id,text_id)
+function frame.remove_text(text_id,player_id)
     Displayer.Text.removeText(player_id, text_id)
 end
 
@@ -446,7 +442,7 @@ end
 
 -- TIMER FUNCTIONS
 
-function frame.spawn_timer(player_id,timer_id,X,Y,duration,loop)
+function frame.spawn_timer(timer_id,player_id,X,Y,duration,loop)
     loop = loop or false
     Displayer.Timer.createPlayerTimer(
         player_id, 
@@ -458,25 +454,25 @@ function frame.spawn_timer(player_id,timer_id,X,Y,duration,loop)
     Displayer.TimerDisplay.createPlayerTimerDisplay(player_id, timer_id, X*2, Y*2, "default")
 end 
 
-function frame.resume_timer(player_id,timer_id)
+function frame.resume_timer(timer_id,player_id)
     Displayer.Timer.resumePlayerTimer(player_id, timer_id)
 end
 
-function frame.pause_timer(player_id,timer_id)
+function frame.pause_timer(timer_id,player_id)
     Displayer.Timer.pausePlayerTimer(player_id, timer_id)
 end
 
-function frame.remove_timer(player_id,timer_id)
+function frame.remove_timer(timer_id,player_id)
     Displayer.Timer.removePlayerTimer(player_id, timer_id)
 end 
 
-function frame.update_timer(player_id,timer_id,duration)
+function frame.update_timer(timer_id,player_id,duration)
     Displayer.Timer.updatePlayerTimer(player_id, timer_id, duration)
 end 
 
 -- COUNTDOWN FUNCTIONS
 
-function frame.spawn_countdown(player_id,countdown_id,X,Y,duration,loop)
+function frame.spawn_countdown(countdown_id,player_id,X,Y,duration,loop)
     loop = loop or false
     Displayer.Timer.createPlayerCountdown(
         player_id, 
@@ -491,19 +487,19 @@ function frame.spawn_countdown(player_id,countdown_id,X,Y,duration,loop)
     Displayer.TimerDisplay.createPlayerCountdownDisplay(player_id, countdown_id, X*2, Y*2, "default")
 end 
 
-function frame.resume_countdown(player_id,countdown_id)
+function frame.resume_countdown(countdown_id,player_id)
     Displayer.Timer.resumePlayerCountdown(player_id, countdown_id)
 end
 
-function frame.pause_countdown(player_id,countdown_id)
+function frame.pause_countdown(countdown_id,player_id)
     Displayer.Timer.pausePlayerCountdown(player_id, countdown_id)
 end
 
-function frame.remove_countdown(player_id,countdown_id)
+function frame.remove_countdown(countdown_id,player_id)
     Displayer.Timer.removePlayerCountdown(player_id, countdown_id)
 end 
 
-function frame.update_countdown(player_id,countdown_id,duration)
+function frame.update_countdown(countdown_id,player_id,duration)
     Displayer.Timer.updatePlayerCountdown(player_id, countdown_id, duration)
 end 
 
@@ -563,7 +559,7 @@ end)
 end
 
 --purpose: removes a cursor and clears cursor_cache for player
-function frame.remove_cursor(player_id,cursor_id)
+function frame.remove_cursor(cursor_id,player_id)
     cursor_cache[player_id] = nil
     Net.player_erase_sprite(player_id, cursor_id .. "_obj")
     frame.unfreeze_player(player_id)
@@ -756,7 +752,7 @@ local function analyze_player_movement(player_id,x,y,z) --was process_movement_e
         direction = "L"
     else
         speed = "walk"
-        direction="D"
+        direction="none"
     end 
 
     --direction reported by Net.get_player_direction() is delayed so we use this instead.
@@ -777,7 +773,11 @@ local function analyze_player_movement(player_id,x,y,z) --was process_movement_e
         last_position_cache[player_id]["pd"] = last_position_cache[player_id]["d"]
     end 
     --set current direction
-    last_position_cache[player_id]["d"] = direction
+    if direction == none then 
+        last_position_cache[player_id]["d"] = last_position_cache[player_id]["d"]
+    else
+        last_position_cache[player_id]["d"] = direction
+    end 
     --log previous speed for tracking
     if last_position_cache[player_id]["s"] ~= "" then
         if last_position_cache[player_id]["ps"] ~= "" then
@@ -951,7 +951,6 @@ Net:on("player_move", function(event)
     --moves players back to stasis center if frozen
     update_stasis(event.player_id)
 
-
 end)
 
 
@@ -964,6 +963,7 @@ end)
 -- Seriously, stop reading this and come help! For real. Please. I'm begging you. 
 
 --print("[games] Framework initiated")
+
 set_stasis()
 
 return frame

@@ -171,10 +171,10 @@ local function greet_simon(actor_id,player_id)
         --the below line currently cases a teleport
         await(games.move_frozen_player(player_id,simon.x+.5,simon.y,simon.z))
         await(games.animate_frozen_player(player_id,"IDLE_UL"))
-        games.spawn_countdown(player_id,"simon_says",22,15,simon.custom_properties["Time"]+1,false)
+        games.spawn_countdown("simon_says",player_id,22,15,simon.custom_properties["Time"]+1,false)
         await(Async.sleep(.1))
-        games.pause_countdown(player_id,"simon_says")
-        games.draw_text(player_id,"simon_says_answers","00",32,39,100,"THICK")
+        games.pause_countdown("simon_says",player_id)
+        games.draw_text("simon_says_answers",player_id,"00",32,39,100,"THICK")
         Net.fade_player_camera(player_id, {r=0,g=0,b=0,a=0}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
         await(Async.sleep(.75))
         Net.unlock_player_input(player_id)
@@ -196,7 +196,7 @@ local function greet_simon(actor_id,player_id)
         Net.play_sound_for_player(player_id, "/server/assets/simon-says/game_start.ogg")
         games.add_map_element("chat",player_id,"/server/assets/simon-says/chat.png","/server/assets/simon-says/chat.animation","UI",simon.x-.8,simon.y-1.1,simon.z)
 
-        games.resume_countdown(player_id,"simon_says")
+        games.resume_countdown("simon_says",player_id)
         simon_players[player_id]["score"] = 0
         games.add_map_element("indicator",player_id,"/server/assets/simon-says/indicators.png","/server/assets/simon-says/indicators.animation","IDLE_UL",100,100,simon.z+2)
         await(Async.sleep(.05))
@@ -234,9 +234,9 @@ Net:on("button_press", function(event)
             Net.play_sound_for_player(event.player_id, "/server/assets/simon-says/correct.ogg")
             simon_players[event.player_id]["score"] = simon_players[event.player_id]["score"] + 1            
             if simon_players[event.player_id]["score"] < 10 then
-                games.update_text(event.player_id, "simon_says_answers","0"..tostring(simon_players[event.player_id]["score"]))
+                games.update_text("simon_says_answers",event.player_id,"0"..tostring(simon_players[event.player_id]["score"]))
             else
-                games.update_text(event.player_id, "simon_says_answers",tostring(simon_players[event.player_id]["score"]))
+                games.update_text("simon_says_answers",event.player_id,tostring(simon_players[event.player_id]["score"]))
             end 
             local area_id = Net.get_player_area(event.player_id)
             local actor_id = simon_players[event.player_id]["actor"]
@@ -253,7 +253,7 @@ Net:on("button_press", function(event)
                 --Net:emit("game_complete",{player_id=event.player_id,game="Simon Says (Easy)", status="win"})
                 Net.unlock_player_input(event.player_id)
 
-                games.pause_countdown(event.player_id,"simon_says")
+                games.pause_countdown("simon_says",event.player_id)
                 Net.play_sound_for_player(event.player_id, "/server/assets/simon-says/succeed.ogg")
                 simon_players[event.player_id]["active"] = false
                 await(Async.message_player(event.player_id, "Wonderful!! Congratulations!!", simon.custom_properties["NPC Mug Texture"], simon.custom_properties["NPC Mug Animation"]))
@@ -262,7 +262,7 @@ Net:on("button_press", function(event)
                 games.remove_ui_element("board",event.player_id)
                 games.remove_map_element("chat",event.player_id)
                 games.remove_map_element("indicator",event.player_id)
-                games.remove_countdown(event.player_id,"simon_says")
+                games.remove_countdown("simon_says",event.player_id)
                 games.remove_text("simon_says_answers",event.player_id)
                 games.unfreeze_player(event.player_id)
                 Net.toggle_player_hud(player_id)
@@ -331,8 +331,8 @@ Net:on("countdown_ended", function(event)
         games.remove_map_element("indicator",event.player_id)
         games.remove_ui_element("board",event.player_id)
         games.remove_map_element("chat",event.player_id)
-        games.remove_text(event.player_id,"simon_says_answers")
-        games.remove_countdown(event.player_id,"simon_says")
+        games.remove_text("simon_says_answers",event.player_id)
+        games.remove_countdown("simon_says",event.player_id)
         games.unfreeze_player(event.player_id)
         Net.toggle_player_hud(player_id)
         Net.fade_player_camera(event.player_id, {r=0,g=0,b=0,a=0}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }

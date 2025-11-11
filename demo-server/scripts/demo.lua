@@ -36,9 +36,8 @@ Net:on("actor_interaction", function (event)
         points = 8
         Net.message_player(event.player_id, "I grant you 8 Order Points. Press LS to reduce them. Talk to me again to remove it.","","") 
         games.add_ui_element("points",event.player_id,"/server/assets/demo/order_points.png","/server/assets/demo/order_points.animation","8POINT",161,2,0)
-        games.draw_text(event.player_id,"simon_says_answers","00",120,80,100,"THICK")
-
         bat_active[event.player_id] = true
+
     elseif event.actor_id == "bat" and event.button == 0 and bat_active[event.player_id] == true then
         Net.message_player(event.player_id, "Let me get rid of that UI for you.","","") 
         games.remove_ui_element("points",event.player_id)
@@ -66,10 +65,10 @@ Net.create_bot("changer", { area_id="default", warp_in=false, texture_path="/ser
 Net:on("cursor_selection", function(event)
     if event.cursor == "navi_changer" then
         print("Player ".. event.player_id .." used cursor "..event.cursor.." to select "..event.selection["name"])
-        games.remove_text(event.player_id,"roll_label")
-        games.remove_text(event.player_id,"megaman_label")
-        games.remove_text(event.player_id,"protoman_label")
-        games.remove_cursor(event.player_id,"navi_changer")
+        games.remove_text("roll_label",event.player_id)
+        games.remove_text("megaman_label",event.player_id)
+        games.remove_text("protoman_label",event.player_id)
+        games.remove_cursor("navi_changer",event.player_id)
         local texture = ""
         local animation = ""
         if event.selection["name"] == "protoman" then
@@ -110,9 +109,9 @@ Net:on("actor_interaction", function (event)
         }
 
         games.spawn_cursor("navi_changer",event.player_id,cursor_options)
-        games.draw_text(event.player_id,"roll_label","Roll.EXE",40,40,100,"THICK")
-        games.draw_text(event.player_id,"megaman_label","Megaman.EXE",40,60,100,"THICK")
-        games.draw_text(event.player_id,"protoman_label","Protoman.EXE",40,80,100,"THICK")
+        games.draw_text("roll_label",event.player_id,"Roll.EXE",40,40,100,"THICK")
+        games.draw_text("megaman_label",event.player_id,"Megaman.EXE",40,60,100,"THICK")
+        games.draw_text("protoman_label",event.player_id,"Protoman.EXE",40,80,100,"THICK")
 
     end 
 end)
