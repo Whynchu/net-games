@@ -15,7 +15,7 @@ local games = require("scripts/net-games/framework")
 
 local bat_active = {} 
 
-Net.create_bot("bat", { area_id="default", warp_in=false, texture_path="/server/assets/cyber_bat.png", animation_path="/server/assets/cyber_bat.animation", x=26, y=21, z=0, solid=true})
+Net.create_bot("bat", { area_id="default", warp_in=false, texture_path="/server/assets/demo/cyber_bat.png", animation_path="/server/assets/demo/cyber_bat.animation", x=26, y=21, z=0, solid=true})
 
 Net:on("button_press", function(event)
     if event.button == "LS" and bat_active[event.player_id] == true then
