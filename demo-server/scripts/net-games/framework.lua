@@ -419,7 +419,7 @@ function frame.detach_camera(player_id)
 end
 
 --purpose: removes UI element from screen
-function frame.remove_ui_element(player_id,sprite_id)
+function frame.remove_ui_element(sprite_id,player_id)
     Net.player_erase_sprite(player_id, sprite_id .. "_obj")
 end
 
