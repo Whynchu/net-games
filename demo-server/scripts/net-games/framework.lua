@@ -613,7 +613,7 @@ Net:on("cursor_move", function(event)
 
     Net.player_draw_sprite(event.player_id, event.cursor, {id=event.cursor.."_obj", x=selection["x"]*2, y=selection["y"]*2})
 
-    Net:emit("cursor_hover", {player_id = event.player_id,cursor = cursor_cache[event.player_id]["name"],selection = selection})
+    Net:emit("cursor_hover", {player_id = event.player_id,cursor = cursor_cache[event.player_id]["name"],selection = selection["name"]})
 
 end)
 

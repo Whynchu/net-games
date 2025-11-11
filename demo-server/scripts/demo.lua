@@ -64,20 +64,20 @@ Net.create_bot("changer", { area_id="default", warp_in=false, texture_path="/ser
 
 Net:on("cursor_selection", function(event)
     if event.cursor == "navi_changer" then
-        print("Player ".. event.player_id .." used cursor "..event.cursor.." to select "..event.selection["name"])
+        print("Player ".. event.player_id .." used cursor "..event.cursor.." to select "..event.selection)
         games.remove_text("roll_label",event.player_id)
         games.remove_text("megaman_label",event.player_id)
         games.remove_text("protoman_label",event.player_id)
         games.remove_cursor("navi_changer",event.player_id)
         local texture = ""
         local animation = ""
-        if event.selection["name"] == "protoman" then
+        if event.selection == "protoman" then
             texture = "/server/assets/demo/protoman-bn5.png"
             animation = "/server/assets/demo/protoman-bn5.animation"
-        elseif event.selection["name"] == "roll" then
+        elseif event.selection == "roll" then
             texture = "/server/assets/demo/roll.png"
             animation = "/server/assets/demo/roll.animation"
-        elseif event.selection["name"] == "megaman" then
+        elseif event.selection == "megaman" then
             texture = "/server/assets/demo/megaman.png"
             animation = "/server/assets/demo/megaman.animation"    
         end 
