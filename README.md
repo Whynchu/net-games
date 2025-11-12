@@ -27,8 +27,8 @@ Recreates the Green Navi from BN3 that lets you bet your zenny that you can choo
 
 If you're a coder looking to build a game or experience using Net Games check out the information below.
 
-1. [Getting Started Guide]("/getting_started.md")
-2. [API Documentation]("/documentation.md")
+1. [Getting Started Guide](/getting_started.md)
+2. [API Documentation](/documentation.md)
 3. Demo Server
 
 The demo server currently spawns two NPCs (besides the Simon Says NPC): the CyberBat spawns a Libertaion Order Point UI (that can be incremented by pressing LS) and whereas Protoman spawns text and a cursor allowing the player to change the bot's avatar. The code that handles each NPC is seperated and easily readable in the `demo.lua` script. 
