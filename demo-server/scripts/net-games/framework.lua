@@ -19,7 +19,6 @@ local frozen = {} --tracks which players are currently frozen
 local last_position_cache = {}
 local stasis_cache = {} --tracks stasis positions for each area on the server
 local cursor_cache = {} --tracks cursors currently spawned for player
-local texture_cache = {} --tracks what textures are currently loaded for player 
 local avatar_cache = {} --tracks the original player avatar for each player
 local ui_cache = {} --tracks ui elements currently spawned for player 
 local map_elements = {} --tracks map elements currently spawned for player 
@@ -29,6 +28,16 @@ local cursor_tick = 0 --keeps cursor from being moved too quickly
 
 -- HELPER FUNCTIONS
 -- A variety of simple functions used for repetitive calculations and adjustments
+
+
+Net:on("player_join", function(event)
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.png")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_gradient.animation")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_thick.animation")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_battle.animation")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.animation")
+
+end)
 
 --purpose: checks if a string follows a valid X,Y,Z pattern
 local function validateCords(str)

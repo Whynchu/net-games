@@ -6,17 +6,17 @@ function FontSystem:init()
     self.font_sprites = {
         THICK = {
             texture_path = "/server/assets/net-games/fonts_compressed.png",
-            anim_path = "/server/assets/net-games/fonts_compressed.animation",
+            anim_path = "/server/assets/net-games/fonts_thick.animation",
             anim_state = "THICK_0" -- Default state
         },
         GRADIENT = {
             texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_compressed.animation",
+            anim_path = "/server/assets/net-games/fonts_gradient.animation",
             anim_state = "GRADIENT_0"
         },
         BATTLE = {
             texture_path = "/server/assets/net-games/fonts_compressed.png",
-            anim_path = "/server/assets/net-games/fonts_compressed.animation", 
+            anim_path = "/server/assets/net-games/fonts_battle.animation", 
             anim_state = "BATTLE_0"
         }
     }
