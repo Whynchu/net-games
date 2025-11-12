@@ -24,33 +24,26 @@ Net.create_bot("marquee_demo", {
     solid=true
 })
 
+-- Update the marquee creation in demo.lua to be simpler:
+local backdrop_config = {
+    x = 10,        -- Just set backdrop position
+    y = 10,        -- Text will be automatically centered
+    width = 220,    
+    height = 30,    -- Backdrop height (text will be centered within this)
+    padding_x = 4,  -- Horizontal padding only
+    -- No need to worry about padding_y for vertical centering anymore
+}
+
 Net:on("actor_interaction", function (event)
+    local marque_npc_check = false
     -- Add new marquee demo interaction
     if event.actor_id == "marquee_demo" and event.button == 0 then
-        if marquee_active[event.player_id] == true then
-            -- Remove the marquee if it's active
-            games.remove_text("demo_marquee", event.player_id)
-            marquee_active[event.player_id] = false
-            Net.message_player(event.player_id, "Marquee text removed!","","") 
-        else
-            -- Create a marquee with backdrop
-            local backdrop_config = {
-                x = 0,        -- X position of backdrop
-                y = 210,        -- Y position of backdrop  
-                width = 220,    -- Width of backdrop
-                height = 30,    -- Height of backdrop
-                padding_x = 8,  -- Padding inside backdrop
-                padding_y = 2   -- Padding inside backdrop
-            }
-            
-            -- Use the new marquee function
-            games.draw_marquee_text("demo_marquee", event.player_id, 
-                "Welcome to the Net Games Demo! This is a scrolling marquee text!", 
-                210, "THICK", 2.0, 100, "medium", backdrop_config)
-            
-            marquee_active[event.player_id] = true
-            Net.message_player(event.player_id, "Marquee text activated! Watch it scroll across the screen.","","") 
-        end
+        games.draw_marquee_text("demo_marquee", event.player_id, 
+        "Welcome  to  the  Net  Games  Demo!  This  text  has  proper  spacing!", 
+        0, -- This y is ignored when backdrop is provided, but kept for API consistency
+        "THICK", 2.0, 100, "medium", backdrop_config)
+        marquee_active[event.player_id] = true
+        Net.message_player(event.player_id, "Marquee text activated! Watch it scroll across the screen.","","") 
     end
 end)
 
@@ -58,11 +51,11 @@ Net:on("actor_interaction", function(event)
     if event.actor_id == "marquee_demo" and event.button == 0 then
         -- Create a marquee with backdrop
         local backdrop_config = {
-            x = 10,        -- X position of backdrop
-            y = 10,        -- Y position of backdrop  
+            x = 0,        -- X position of backdrop
+            y = 210,        -- Y position of backdrop  
             width = 220,    -- Width of backdrop
             height = 30,    -- Height of backdrop
-            padding_x = 4,  -- Padding inside backdrop
+            padding_x = 10,  -- Padding inside backdrop
             padding_y = 2   -- Padding inside backdrop
         }
         

@@ -471,6 +471,10 @@ function frame.draw_marquee_text(marquee_id, player_id, text, y, font, scale, z_
     Displayer.Text.drawMarqueeText(player_id, marquee_id, text, y, font, scale, z_order, speed, backdrop)
 end
 
+function frame.set_marquee_position(player_id, marquee_id, x, y)
+    Displayer.Text.setMarqueePosition(player_id, marquee_id, x, y)
+end
+
 function frame.set_marquee_speed(player_id, marquee_id, speed)
     Displayer.Text.setMarqueeSpeed(player_id, marquee_id, speed)
 end
