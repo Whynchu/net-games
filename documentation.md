@@ -1,46 +1,3 @@
-### Installation
-> 1. Copy `/scripts/net-games/` to your server script folder.
-> 2. Copy `/assets/net-games/` to your server assets folder.
-> 3. Include the following code at the start of any script that needs to access net-games.
-
-```
-local games = require("scripts/net-games/framework")
-```
-
-> You will then access the functions via the variable you specify. For example, if you use `games` as your variable (like the example above) you would access the functions with this variable appended to the beginning like so `games.freeze_player(player_id)`. 
-
-### Features
-> 1. Freeze player movement while still reporting button inputs. <br>
-> &nbsp; &nbsp; For example, the moveable camera during Liberation Missions
-> 2. Easily position sprites on screen relative to the player's camera <br>
-> &nbsp; &nbsp; For example, add a persistent Order Points UIs during Liberation Missions <br>
-> 3. Create custom selectors with customizable cursor sprites and positioning <br>
-> &nbsp; &nbsp; For example, the liberate panel selector. <br>
-> 4. Respond to currently hovered cursor selection <br>
-> &nbsp; &nbsp; For example, change highlighted tiles based on which power is hovered over during liberation tile selection. <br>
-> 5. Show in-game timers <br>
-> &nbsp; &nbsp; For example, you can have races and time trial leaderboards.
-> 6. Show in-game countdowns <br>
-> &nbsp; &nbsp; For example, the sixty second countdown used in BN3 for the CyberSimon Says <br>
-
-## Positioning Sprites
-
-When a function asks you for a x, y, z (except for map elements), it is asking for a position relative to the camera. 
-
-![onb-ui-guide](https://github.com/user-attachments/assets/3459e10b-8658-4c8b-a43c-376a42c7a920)
-
-Per the graphic above, the following positions would require the associated values:
-```
-position = x,y
-top left = 0,0
-top middle = 120,0
-top right = 240,0
-middle = 120,80
-bottom left = 0,160
-bottom middle = 120,160
-bottom right = 240,160
-```
-
 # Net Games (Documentation)
 
 ### Click any header below to expand it. 
@@ -56,6 +13,12 @@ bottom right = 240,160
 > **Description**: Releases a player from being frozen, returning them to their original position.  
 > **Parameters**:
 > - `player_id` (string): The ID of the player to unfreeze
+
+#### `Net:on("button_press")`
+> **Description**: Called when a button pressed by a player, useful to get inputs when player is frozen. 
+> **Parameters**:
+> - `event.player_id` (string): The ID of the frozen player
+> - `event.button` (string): The button can be "A","LS","U","D","L","R","DR","DL","UR", or "UL"
 
 #### `move_frozen_player(player_id, X, Y, Z)`
 > **Description**: Instantly moves a frozen player to specified coordinates without animation.  
@@ -77,14 +40,6 @@ bottom right = 240,160
 > - `player_id` (string): The ID of the frozen player
 > - `animation_state` (string): Name of animation state to play
 </details>
-
-#### `Net:on("button_press")`
-> **Description**: Called when a button pressed by a player, useful to get inputs when player is frozen. 
-> **Parameters**:
-> - `event.player_id` (string): The ID of the frozen player
-> - `event.button` (string): The button can be "A","LS","U","D","L","R","DR","DL","UR", or "UL"
-</details>
-
 
 <details><summary><h3>Map Element Functions</h3></summary>
 
@@ -174,17 +129,16 @@ bottom right = 240,160
 > - `options` (table): Configuration including texture, animation, and selections  
 
 The options table should include a `movement` direction, a `selections` table, and a `texture` and `animation` for the cursor: 
-`        options = {
-            texture="/server/assets/net-games/text_cursor.png",
-            animation="/server/assets/net-games/text_cursor.animation"
-            movement = "vertical", 
-            selections = {
-                { x=35,y=45,z=0,name='roll',state="CURSOR_RIGHT" },
-                { x=35,y=65,z=0,name='megaman',state="CURSOR_RIGHT" },
-                { x=35,y=85,z=0,name='protoman',state="CURSOR_RIGHT" }
-            }
-        }
-`
+`options = {
+   texture="/server/assets/net-games/text_cursor.png",
+   animation="/server/assets/net-games/text_cursor.animation"
+   movement = "vertical", 
+   selections = {
+         { x=35,y=45,z=0,name='roll',state="CURSOR_RIGHT" },
+         { x=35,y=65,z=0,name='megaman',state="CURSOR_RIGHT" },
+         { x=35,y=85,z=0,name='protoman',state="CURSOR_RIGHT" }
+   }
+}`
 
 The `movement` parameter can be `horizontal`, `vertical`, or `shoulder`. If `horizontal` the cursor moves when Left or Right is pressed. If vertical the cursor moves if Up or Down. If shoulder the cursor moves when Left Shoulder is pressed.
 

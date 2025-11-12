@@ -250,7 +250,7 @@ Net:on("button_press", function(event)
             --limit has been reached, end game as winner
             elseif simon_players[event.player_id]["score"] >= tonumber(simon.custom_properties["Limit"]) then
 
-                --Net:emit("game_complete",{player_id=event.player_id,game="Simon Says (Easy)", status="win"})
+                Net:emit("game_complete",{player_id=event.player_id,game="Simon Says", status="win",area=area_id,limit=simon.custom_properties["Limit"],limit=simon.custom_properties["Time"],area=area_id,actor=actor_id})
                 Net.unlock_player_input(event.player_id)
 
                 games.pause_countdown("simon_says",event.player_id)
@@ -318,12 +318,13 @@ Net:on("countdown_ended", function(event)
     return async(function ()
         simon_players[event.player_id]["active"] = false
         --time limit reached, end game as loser
-        Net:emit("game_complete",{player_id=event.player_id,game="Simon Says (Easy)", status="loss"})
         local area_id = Net.get_player_area(event.player_id)
         local actor_id = simon_players[event.player_id]["actor"]
         simon_cache[area_id][actor_id]['occupied'] = false
         simon_players[event.player_id] = nil
         local simon = simon_cache[area_id][actor_id]
+        Net:emit("game_complete",{player_id=event.player_id,game="Simon Says", status="loss",area=area_id,limit=simon.custom_properties["Limit"],limit=simon.custom_properties["Time"],area=area_id,actor=actor_id})
+
         Net.play_sound_for_player(event.player_id, "/server/assets/simon-says/time_up.ogg")
         await(Async.message_player(event.player_id, "Too bad!! And you were so close, too. Please play again soon!", simon.custom_properties["NPC Mug Texture"], simon.custom_properties["NPC Mug Animation"]))
         Net.fade_player_camera(event.player_id, {r=0,g=0,b=0,a=255}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }

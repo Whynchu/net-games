@@ -11,7 +11,8 @@
 
 > Click on any of the titles below to read an extended description and find links to information.
 <details><summary><h4>1. CyberSimon Says (game)</h4></summary>
-Recreates the Green Navi from BN3 that plays Simon Says with the player. This script allows you to spawn customizable *CyberSimon Says* NPCs (each with adjustable time limits and score to win). [Documentation](# "Documentation")
+Recreates the Green Navi from BN3 that plays Simon Says with the player. This script allows you to spawn customizable *CyberSimon Says* NPCs (each with adjustable time limits and score to win). [Documentation](# "")
+
 </details><!--
 <details><summary><h4>2. Tournaments</h4></summary>
 Recreates the Tournaments from BN4 and EXE4.5, allowing you to spawn Tournament Boards on your server that (when interacted with) will allow players to compete in single player or multiplayer MMBN style tournaments. Even without eight players this module will fill empty roster with NPCs so groups of any size can play. [Documentation](# "Documentation")
