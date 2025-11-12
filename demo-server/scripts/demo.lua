@@ -13,6 +13,65 @@ local games = require("scripts/net-games/framework")
 -- DEMO CODE FOR THE BAT NPC THAT SPAWNS THE ORDER POINT UI --
 --------------------------------------------------------------
 
+local marquee_active = {}
+
+Net.create_bot("marquee_demo", { 
+    area_id="default", 
+    warp_in=false, 
+    texture_path="/server/assets/demo/cyber_bat.png", 
+    animation_path="/server/assets/demo/cyber_bat.animation", 
+    x=24, y=21, z=0, 
+    solid=true
+})
+
+Net:on("actor_interaction", function (event)
+    -- Add new marquee demo interaction
+    if event.actor_id == "marquee_demo" and event.button == 0 then
+        if marquee_active[event.player_id] == true then
+            -- Remove the marquee if it's active
+            games.remove_text("demo_marquee", event.player_id)
+            marquee_active[event.player_id] = false
+            Net.message_player(event.player_id, "Marquee text removed!","","") 
+        else
+            -- Create a marquee with backdrop
+            local backdrop_config = {
+                x = 10,        -- X position of backdrop
+                y = 10,        -- Y position of backdrop  
+                width = 220,    -- Width of backdrop
+                height = 20,    -- Height of backdrop
+                padding_x = 4,  -- Padding inside backdrop
+                padding_y = 2   -- Padding inside backdrop
+            }
+            
+            -- Use the new marquee function
+            games.draw_marquee_text("demo_marquee", event.player_id, 
+                "Welcome to the Net Games Demo! This is a scrolling marquee text!", 
+                15, "THICK", 2.0, 100, "medium", backdrop_config)
+            
+            marquee_active[event.player_id] = true
+            Net.message_player(event.player_id, "Marquee text activated! Watch it scroll across the screen.","","") 
+        end
+    end
+end)
+
+Net:on("actor_interaction", function(event)
+    if event.actor_id == "marquee_demo" and event.button == 0 then
+            -- Create a marquee with backdrop
+            local backdrop_config = {
+                x = 10,        -- X position of backdrop
+                y = 10,        -- Y position of backdrop  
+                width = 220,    -- Width of backdrop
+                height = 20,    -- Height of backdrop
+                padding_x = 4,  -- Padding inside backdrop
+                padding_y = 2   -- Padding inside backdrop
+            }
+            
+            games:draw_marquee_text("demo_marquee", event.player_id, "Welcome to the Net Games Demo! This is a scrolling marquee text!", 15, "THICK", 2.0, 100, "medium", backdrop_config)
+            marquee_active[event.player_id] = true
+            Net.message_player(event.player_id, "Marquee text activated! Watch it scroll across the screen.") 
+        end
+end)
+
 local bat_active = {} 
 
 Net.create_bot("bat", { area_id="default", warp_in=false, texture_path="/server/assets/demo/cyber_bat.png", animation_path="/server/assets/demo/cyber_bat.animation", x=26, y=21, z=0, solid=true})
@@ -43,15 +102,16 @@ Net:on("actor_interaction", function (event)
         games.remove_ui_element("points",event.player_id)
         bat_active[event.player_id] = false
     end
-
 end)
 
 Net:on("player_join", function(event)
     bat_active[event.player_id] = false
+    marquee_active[event.player_id] = false
 end)
 
 Net:on("player_disconnect", function(event)
     bat_active[event.player_id] = false
+    marquee_active[event.player_id] = nil
 end)
 
 ----------------------------------------------------------------------

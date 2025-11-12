@@ -532,7 +532,7 @@ function TextDisplay:drawText(player_id, text_id, text, x, y, z_order, font_name
     local player_data = self.player_texts[player_id]
     if not player_data then return nil end
     
-    local text_id = text_id or "text_" .. player_data.next_obj_id
+    local text_id = (text_id or "text_") .. player_data.next_obj_id
     player_data.next_obj_id = player_data.next_obj_id + 1
     
     local text_data = {
@@ -616,6 +616,7 @@ function TextDisplay:drawMarqueeText(player_id, marquee_id, text, y, font_name, 
     player_data.active_texts[marquee_id] = marquee_data
     return marquee_id
 end
+
 function TextDisplay:setupMarqueeCharacters(marquee_data)
     local font_name = marquee_data.font
     local char_widths = self.font_system.char_widths[font_name] or self.font_system.char_widths.THICK
@@ -651,44 +652,59 @@ function TextDisplay:setupMarqueeCharacters(marquee_data)
     end
 end
 
+-- In text-display.lua, replace the current drawMarqueeCharacters with:
+
 function TextDisplay:drawMarqueeCharacters(player_id, marquee_id, marquee_data)
-    -- Clear existing character objects
-    for _, char_data in ipairs(marquee_data.individual_chars) do
-        if char_data.obj_id then
-            Net.player_erase_sprite(player_id, char_data.obj_id)
-        end
-    end
-    
-    -- Draw each character that's within bounds
+    -- Only update positions of existing sprites, don't erase/redraw
     for i, char_data in ipairs(marquee_data.individual_chars) do
         -- Calculate absolute position
         local char_x = marquee_data.current_x + char_data.relative_x
         
         -- Check if character is visible within bounds
-        if char_x + char_data.width >= marquee_data.bounds_left and 
-           char_x <= marquee_data.bounds_right then
-            
-            local char_obj_id = marquee_id .. "_char_" .. i
-            
-            Net.player_draw_sprite(
-                player_id,
-                marquee_data.font,  -- Use font name as sprite ID
-                {
-                    id = char_obj_id,
-                    x = char_x,
-                    y = marquee_data.y,
-                    z = marquee_data.z_order,
-                    sx = marquee_data.scale,
-                    sy = marquee_data.scale,
-                    anim_state = char_data.anim_state
-                }
-            )
-            
-            char_data.obj_id = char_obj_id
-        elseif char_data.obj_id then
-            -- Character is out of bounds, remove it
-            Net.player_erase_sprite(player_id, char_data.obj_id)
-            char_data.obj_id = nil
+        local is_visible = (char_x + char_data.width >= marquee_data.bounds_left and 
+                           char_x <= marquee_data.bounds_right)
+        
+        if is_visible then
+            if char_data.obj_id then
+                -- UPDATE EXISTING SPRITE POSITION (much more efficient)
+                Net.player_draw_sprite(
+                    player_id,
+                    marquee_data.font,
+                    {
+                        id = char_data.obj_id,  -- Same ID = update, not recreate
+                        x = char_x,  -- Only change position
+                        y = marquee_data.y,
+                        -- Keep all other properties the same
+                        z = marquee_data.z_order,
+                        sx = marquee_data.scale,
+                        sy = marquee_data.scale,
+                        anim_state = char_data.anim_state
+                    }
+                )
+            else
+                -- Only create NEW sprites when they become visible
+                local char_obj_id = marquee_id .. "_char_" .. i
+                Net.player_draw_sprite(
+                    player_id,
+                    marquee_data.font,
+                    {
+                        id = char_obj_id,
+                        x = char_x,
+                        y = marquee_data.y,
+                        z = marquee_data.z_order,
+                        sx = marquee_data.scale,
+                        sy = marquee_data.scale,
+                        anim_state = char_data.anim_state
+                    }
+                )
+                char_data.obj_id = char_obj_id
+            end
+        else
+            -- Only remove sprites when they go out of bounds
+            if char_data.obj_id then
+                Net.player_erase_sprite(player_id, char_data.obj_id)
+                char_data.obj_id = nil
+            end
         end
     end
 end

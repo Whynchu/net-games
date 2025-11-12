@@ -413,6 +413,27 @@ function frame.move_ui_element(sprite_id,player_id,X,Y,Z)
     )
 end
 
+function frame.update_ui_position(sprite_id, player_id, X, Y, Z)
+    if ui_cache[player_id] and ui_cache[player_id][sprite_id] then
+        local element = ui_cache[player_id][sprite_id]
+        Net.player_draw_sprite(player_id, element.sprite_id,
+            {
+                id = sprite_id .. "_obj",
+                x = X*2,
+                y = Y*2,
+                z = Z or element.z,
+                sx = element.scaleX,
+                sy = element.scaleY,
+                anim_state = element.animation_state
+            }
+        )
+        -- Update cache
+        element.x = X
+        element.y = Y
+        element.z = Z or element.z
+    end
+end
+
 --purpose: slide an existing UI element across the screen over a specified duration
 function frame.slide_ui_element(sprite_id,player_id,X,Y,duration)
     print("slide_ui_element() is not yet supported.")
@@ -433,7 +454,6 @@ function frame.remove_ui_element(sprite_id,player_id)
 end
 
 -- TEXT FUNCTIONS
-
 function frame.draw_text(text_id,player_id,text,x,y,z,font,scale)
     Displayer.Text.drawText(player_id, text_id, text, tonumber(x)*2, tonumber(y)*2, z, font, scale)
 end
@@ -446,8 +466,14 @@ function frame.remove_text(text_id,player_id)
     Displayer.Text.removeText(player_id, text_id)
 end
 
---function frame.display_marquee(player_id,text_id,font,color,text,X,Y)
---end
+-- ADD MARQUEE TEXT FUNCTION
+function frame.draw_marquee_text(marquee_id, player_id, text, y, font, scale, z_order, speed, backdrop)
+    Displayer.Text.drawMarqueeText(player_id, marquee_id, text, y, font, scale, z_order, speed, backdrop)
+end
+
+function frame.set_marquee_speed(player_id, marquee_id, speed)
+    Displayer.Text.setMarqueeSpeed(player_id, marquee_id, speed)
+end
 
 -- TIMER FUNCTIONS
 
