@@ -335,7 +335,7 @@ Net:on("countdown_ended", function(event)
         games.remove_text("simon_says_answers",event.player_id)
         games.remove_countdown("simon_says",event.player_id)
         games.unfreeze_player(event.player_id)
-        Net.toggle_player_hud(player_id)
+        Net.toggle_player_hud(event.player_id)
         Net.fade_player_camera(event.player_id, {r=0,g=0,b=0,a=0}, .5) -- color = { r: 0-255, g: 0-255, b: 0-255, a?: 0-255 }
         await(Async.sleep(.75))
     end)
