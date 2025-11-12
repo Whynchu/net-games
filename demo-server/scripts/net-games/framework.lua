@@ -583,7 +583,7 @@ Net:on("button_press", function(event)
                 Net:emit("cursor_move", {player_id = event.player_id, cursor = cursor["name"], selection = cursor["current"], button = event.button})
             --if A button emit selection
             elseif event.button == "A" then
-                Net:emit("cursor_selection", {player_id = event.player_id,cursor = cursor["name"],selection = cursor_cache[event.player_id]["selections"][cursor["current"]]})
+                Net:emit("cursor_selection", {player_id = event.player_id,cursor = cursor["name"],selection = cursor_cache[event.player_id]["selections"][cursor["current"]]["name"]})
             end
 
         end 
