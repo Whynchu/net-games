@@ -150,7 +150,6 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 > - `event.cursor` (string): Identifier of cursor
 > - `event.player_id` (string): The ID of the player
 > - `event.selection` (string): Identifier (name) of selection
-</details>
 
 #### `Net:on("cursor_selection")`
 > **Description**: An event used to react to a player's selection when using a cursor. 
@@ -158,8 +157,6 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 > - `event.cursor` (string): Identifier of cursor
 > - `event.player_id` (string): The ID of the player
 > - `event.selection` (string): Identifier (name) of the hovered selection
-</details>
-
 
 #### `remove_cursor(cursor_id, player_id)`
 > **Description**: Removes a cursor UI.  
