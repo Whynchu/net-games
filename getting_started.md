@@ -29,7 +29,7 @@ local games = require("scripts/net-games/framework")
 
 When a function asks you for a x, y, z (except for map elements), it is asking for a position relative to the camera. 
 
-![onb-ui-guide](https://github.com/user-attachments/assets/3459e10b-8658-4c8b-a43c-376a42c7a920)
+<img width="575" height="384" alt="onb-ui-guide" src="https://github.com/user-attachments/assets/6b68c105-a7da-4c1e-8089-6ac47b085869" />
 
 Per the graphic above, the following positions would require the associated values:
 ```
