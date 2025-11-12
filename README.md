@@ -11,7 +11,10 @@
 
 Click on any of the titles below to read an extended description and find links to information.
 <details><summary><h4>1. CyberSimon Says (game)</h4></summary>
-Recreates the Green Navi from BN3 that plays Simon Says with the player. This script allows you to spawn customizable *CyberSimon Says* NPCs (each with adjustable time limits and score to win). <a href="/simon_says.md">Read the Docs</a>
+Recreates the Green Navi from BN3 that plays Simon Says with the player. This script allows you to spawn customizable *CyberSimon Says* NPCs (each with adjustable time limits and score to win). <br>
+  
+<br><a href="/simon_says.md">Read the Documentation</a><br>
+<br><img width=400 src="https://github.com/user-attachments/assets/8b20b7dc-a972-4340-a7df-46824df722cd"/>
 
 </details>
 <!--
