@@ -35,18 +35,18 @@ Net:on("actor_interaction", function (event)
         else
             -- Create a marquee with backdrop
             local backdrop_config = {
-                x = 10,        -- X position of backdrop
-                y = 10,        -- Y position of backdrop  
+                x = 0,        -- X position of backdrop
+                y = 210,        -- Y position of backdrop  
                 width = 220,    -- Width of backdrop
-                height = 20,    -- Height of backdrop
-                padding_x = 4,  -- Padding inside backdrop
+                height = 30,    -- Height of backdrop
+                padding_x = 8,  -- Padding inside backdrop
                 padding_y = 2   -- Padding inside backdrop
             }
             
             -- Use the new marquee function
             games.draw_marquee_text("demo_marquee", event.player_id, 
                 "Welcome to the Net Games Demo! This is a scrolling marquee text!", 
-                15, "THICK", 2.0, 100, "medium", backdrop_config)
+                210, "THICK", 2.0, 100, "medium", backdrop_config)
             
             marquee_active[event.player_id] = true
             Net.message_player(event.player_id, "Marquee text activated! Watch it scroll across the screen.","","") 
@@ -56,20 +56,20 @@ end)
 
 Net:on("actor_interaction", function(event)
     if event.actor_id == "marquee_demo" and event.button == 0 then
-            -- Create a marquee with backdrop
-            local backdrop_config = {
-                x = 10,        -- X position of backdrop
-                y = 10,        -- Y position of backdrop  
-                width = 220,    -- Width of backdrop
-                height = 20,    -- Height of backdrop
-                padding_x = 4,  -- Padding inside backdrop
-                padding_y = 2   -- Padding inside backdrop
-            }
-            
-            games:draw_marquee_text("demo_marquee", event.player_id, "Welcome to the Net Games Demo! This is a scrolling marquee text!", 15, "THICK", 2.0, 100, "medium", backdrop_config)
-            marquee_active[event.player_id] = true
-            Net.message_player(event.player_id, "Marquee text activated! Watch it scroll across the screen.") 
-        end
+        -- Create a marquee with backdrop
+        local backdrop_config = {
+            x = 10,        -- X position of backdrop
+            y = 10,        -- Y position of backdrop  
+            width = 220,    -- Width of backdrop
+            height = 30,    -- Height of backdrop
+            padding_x = 4,  -- Padding inside backdrop
+            padding_y = 2   -- Padding inside backdrop
+        }
+        
+        games:draw_marquee_text("demo_marquee", event.player_id, "Welcome to the Net Games Demo! This is a scrolling marquee text!", 15, "THICK", 2.0, 100, "medium", backdrop_config)
+        marquee_active[event.player_id] = true
+        Net.message_player(event.player_id, "Marquee text activated! Watch it scroll across the screen.") 
+    end
 end)
 
 local bat_active = {} 

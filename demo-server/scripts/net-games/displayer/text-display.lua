@@ -616,43 +616,44 @@ function TextDisplay:drawMarqueeText(player_id, marquee_id, text, y, font_name, 
     player_data.active_texts[marquee_id] = marquee_data
     return marquee_id
 end
-
 function TextDisplay:setupMarqueeCharacters(marquee_data)
     local font_name = marquee_data.font
     local char_widths = self.font_system.char_widths[font_name] or self.font_system.char_widths.THICK
-    local default_char_width = char_widths["A"] or char_widths["0"] or 6
     local scale = marquee_data.scale
     
-    -- FIXED: Scale spacing properly
+    -- FIXED: Scale spacing properly and use actual character widths
     local base_spacing = 1
     local scaled_spacing = base_spacing * scale
-    local advance = (default_char_width + scaled_spacing) * scale
 
     marquee_data.individual_chars = {}
 
-    -- Total text width calculation with proper scaling
+    -- Calculate total text width using ACTUAL character widths
+    local total_text_width = 0
     local n = #marquee_data.text
-    marquee_data.total_text_width = (n * default_char_width * scale) + (math.max(0, n - 1) * scaled_spacing)
-
-    -- Setup individual character data with relative positions
-    local relative_x = 0
+    
     for i = 1, n do
         local char = marquee_data.text:sub(i, i)
-        local char_width = default_char_width * scale
+        -- FIXED: Use actual character width from font table, fallback to default
+        local char_width = (char_widths[char] or char_widths["A"] or 6) * scale
         
         table.insert(marquee_data.individual_chars, {
             char = char,
             width = char_width,
-            relative_x = relative_x,
+            relative_x = total_text_width, -- Cumulative position
             obj_id = nil,
-            anim_state = font_name .. "_" .. char
+            anim_state = font_name .. "_" .. char,
+            is_space = (char == " ") -- Track if this is a space
         })
         
-        relative_x = relative_x + char_width + scaled_spacing
+        -- FIXED: Add character width PLUS spacing (except for last character)
+        total_text_width = total_text_width + char_width
+        if i < n then
+            total_text_width = total_text_width + scaled_spacing
+        end
     end
-end
 
--- In text-display.lua, replace the current drawMarqueeCharacters with:
+    marquee_data.total_text_width = total_text_width
+end
 
 function TextDisplay:drawMarqueeCharacters(player_id, marquee_id, marquee_data)
     -- Only update positions of existing sprites, don't erase/redraw
@@ -664,17 +665,17 @@ function TextDisplay:drawMarqueeCharacters(player_id, marquee_id, marquee_data)
         local is_visible = (char_x + char_data.width >= marquee_data.bounds_left and 
                            char_x <= marquee_data.bounds_right)
         
-        if is_visible then
+        -- FIXED: Skip drawing spaces entirely (but still account for their width in positioning)
+        if is_visible and not char_data.is_space then
             if char_data.obj_id then
-                -- UPDATE EXISTING SPRITE POSITION (much more efficient)
+                -- UPDATE EXISTING SPRITE POSITION
                 Net.player_draw_sprite(
                     player_id,
                     marquee_data.font,
                     {
-                        id = char_data.obj_id,  -- Same ID = update, not recreate
-                        x = char_x,  -- Only change position
+                        id = char_data.obj_id,
+                        x = char_x,
                         y = marquee_data.y,
-                        -- Keep all other properties the same
                         z = marquee_data.z_order,
                         sx = marquee_data.scale,
                         sy = marquee_data.scale,
@@ -682,7 +683,7 @@ function TextDisplay:drawMarqueeCharacters(player_id, marquee_id, marquee_data)
                     }
                 )
             else
-                -- Only create NEW sprites when they become visible
+                -- Only create NEW sprites when they become visible (and not spaces)
                 local char_obj_id = marquee_id .. "_char_" .. i
                 Net.player_draw_sprite(
                     player_id,
@@ -700,7 +701,7 @@ function TextDisplay:drawMarqueeCharacters(player_id, marquee_id, marquee_data)
                 char_data.obj_id = char_obj_id
             end
         else
-            -- Only remove sprites when they go out of bounds
+            -- Only remove sprites when they go out of bounds (and they're not spaces)
             if char_data.obj_id then
                 Net.player_erase_sprite(player_id, char_data.obj_id)
                 char_data.obj_id = nil
