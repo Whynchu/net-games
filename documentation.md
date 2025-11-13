@@ -192,6 +192,36 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 > - `player_id` (string): The ID of the player
 </details>
 
+<details><summary><h3>Marquee Functions</h3></summary>
+
+#### `draw_marquee_text(marquee_id, player_id, text, y, font, scale, z_order, speed, backdrop)`
+> **Description**: Draws scrolling marquee text with optional backdrop.  
+> **Parameters**:
+> - `marquee_id` (string): Unique identifier for this marquee
+> - `player_id` (string): The ID of the player
+> - `text` (string): Text content to scroll
+> - `y` (number): Y position (used if no backdrop provided)
+> - `font` (string): Font style ("THICK", "GRADIENT", "BATTLE")
+> - `scale` (number): Text scale factor (default: 2.0)
+> - `z_order` (number): Rendering layer (default: 100)
+> - `speed` (string): Scroll speed ("slow", "medium", "fast")
+> - `backdrop` (table): Optional backdrop configuration
+
+#### `set_marquee_position(player_id, marquee_id, x, y)`
+> **Description**: Updates the position of existing marquee text.  
+> **Parameters**:
+> - `player_id` (string): The ID of the player
+> - `marquee_id` (string): Identifier of marquee to move
+> - `x` (number): New X position
+> - `y` (number): New Y position
+
+#### `set_marquee_speed(player_id, marquee_id, speed)`
+> **Description**: Changes the scroll speed of existing marquee text.  
+> **Parameters**:
+> - `player_id` (string): The ID of the player
+> - `marquee_id` (string): Identifier of marquee to modify
+> - `speed` (string): New scroll speed ("slow", "medium", "fast")
+
 <details><summary><h3>Timer Functions</h3></summary>
 
 #### `spawn_timer(timer_id, player_id, X, Y, duration, loop)`
