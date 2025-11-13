@@ -25,14 +25,18 @@ Net.create_bot("marquee_demo", {
     solid=true
 })
 
--- Update the marquee creation in demo.lua to be simpler:
 local backdrop_config = {
-    x = 0,        -- Just set backdrop position
-    y = 240,        -- Text will be automatically centered
-    width = 240,    
+    x = 0,          -- Just set backdrop position
+    y = 130,        -- Text will be automatically centered
+    width = 240,    -- Width of the backdrop we currently are using
     height = 30,    -- Backdrop height (text will be centered within this)
-    padding_x = 4,  -- Horizontal padding only
-    -- No need to worry about padding_y for vertical centering anymore
+    loops = 1,      -- (int : optional) Set loops to how many times you would like it to show before removing or using a custom `on_finish` function to be called when the loops for marquee text have completed.
+                    --      - If nil or 0 is provided it will default to infinite be on screen until it is manually removed by the programmer.
+--  EXTRA OPTIONAL FIELDS NOT LISTED ABOVE
+--  on_finish     = (function : optional) some_x_function() end 
+--      - If none is provided it will remove marquee text and its backdrop.
+--  keep_backdrop = (bool : optional) true or false
+--      - If none is provided then this will default to false.
 }
 
 Net:on("actor_interaction", function(event)

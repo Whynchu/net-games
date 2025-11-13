@@ -2,6 +2,22 @@
 TextDisplay = {}
 TextDisplay.__index = TextDisplay
 
+-- Normalize "loops" option:
+-- nil/true  => infinite (default)
+-- false/"once"/1 => once
+-- number>=1 => that many passes
+local function _normalize_loops(v)
+    if v == nil or v == true then return nil end
+    if v == false or v == "once" then return 1 end
+    local n = tonumber(v)
+    if n then
+        n = math.floor(n)
+        if n < 1 then return 1 end
+        return n
+    end
+    return nil
+end
+
 function TextDisplay:init()
     self.player_texts = {}
     self.font_system = require("scripts/net-games/displayer/font-system")
@@ -64,6 +80,35 @@ function TextDisplay:setupPlayerTextDisplays(player_id)
     self.player_texts[player_id].allocated_backdrop = true
 end
 
+function TextDisplay:removeText(player_id, text_id)
+    local player_data = self.player_texts[player_id]
+    if player_data then
+        local text_data = player_data.active_texts[text_id]
+        if text_data then
+            -- Remove text display
+            if text_data.type == "marquee" then
+                -- Remove individual characters
+                for _, char_data in ipairs(text_data.individual_chars) do
+                    if char_data.obj_id then
+                        Net.player_erase_sprite(player_id, char_data.obj_id)
+                    end
+                end
+            else
+                if text_data.display_id then
+                    self.font_system:eraseTextDisplay(player_id, text_data.display_id)
+                end
+            end
+            
+            -- Remove backdrop if it exists
+            if text_data.backdrop_id then
+                Net.player_erase_sprite(player_id, text_data.backdrop_id)
+            end
+            
+            player_data.active_texts[text_id] = nil
+        end
+    end
+end
+
 function TextDisplay:cleanupPlayerTextDisplays(player_id)
     local player_data = self.player_texts[player_id]
     if player_data then
@@ -99,12 +144,12 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
     -- Use backdrop config if provided, otherwise create default
     local actual_backdrop_config = backdrop_config or {
         x = x, y = y, width = width, height = height,
-        padding_x = 8, padding_y = 6
+        padding_x = 0, padding_y = 0
     }
     
     -- Calculate text bounds within the box - ALWAYS use the backdrop config for positioning
-    local padding_x = actual_backdrop_config.padding_x or 8
-    local padding_y = actual_backdrop_config.padding_y or 6
+    local padding_x = actual_backdrop_config.padding_x or 0
+    local padding_y = actual_backdrop_config.padding_y or 0
     local inner_x = actual_backdrop_config.x + padding_x
     local inner_y = actual_backdrop_config.y + padding_y
     local inner_width = actual_backdrop_config.width - (padding_x * 2)
@@ -566,27 +611,48 @@ function TextDisplay:drawMarqueeText(player_id, marquee_id, text, y, font_name, 
     local text_width = self.font_system:getTextWidth(text, font_name, scale)
     local speed_value = self.marquee_speeds[speed] or self.marquee_speeds.medium
     
-    -- FIXED: Automatic backdrop and text synchronization
+    -- FIXED: Consistent scaling for bounds calculation
     local bounds_left, bounds_right, bounds_width
     local start_x
     local actual_y = y -- Store the actual y position
     
     if backdrop then
-        local padding_x = backdrop.padding_x or 4
-        local padding_y = backdrop.padding_y or 2
+        local padding_x = backdrop.padding_x or 0
+        local padding_y = backdrop.padding_y or 0
         
-        -- FIXED: Automatically calculate text y position to be centered in backdrop
-        local text_height = 8 * scale -- Approximate text height
-        local centered_y = backdrop.y + ((backdrop.height - text_height) / 2)
+        -- FIXED: Apply consistent scaling to all backdrop calculations
+        local backdrop_scale = backdrop.scale or 2.0 -- Backdrop scale if specified
         
-        bounds_left = backdrop.x + padding_x
-        bounds_right = backdrop.x + backdrop.width - padding_x
+        -- FIXED: Scale backdrop coordinates and dimensions properly
+        local scaled_backdrop_x = backdrop.x * backdrop_scale
+        local scaled_backdrop_y = backdrop.y * backdrop_scale
+        local scaled_backdrop_width = backdrop.width * backdrop_scale
+        local scaled_backdrop_height = backdrop.height * backdrop_scale
+        local scaled_padding_x = padding_x * backdrop_scale
+        local scaled_padding_y = padding_y * backdrop_scale
+        
+        -- FIXED: Calculate bounds using scaled values
+        bounds_left = scaled_backdrop_x + scaled_padding_x
+        bounds_right = scaled_backdrop_x + scaled_backdrop_width - scaled_padding_x
         bounds_width = bounds_right - bounds_left
-        start_x = bounds_right -- Start at right edge of backdrop bounds
+        
+        -- FIXED: Start position should be the right edge of the visible bounds
+        start_x = bounds_right
+        
+        -- FIXED: Calculate text y position to be centered in backdrop with proper scaling
+        local text_height = 8 * scale -- Approximate text height (font height * text scale)
+        local centered_y = scaled_backdrop_y + ((scaled_backdrop_height - text_height) / 2)
         
         -- Use the centered position instead of the provided y
         actual_y = centered_y
+        
+        -- DEBUG: Print scaling information
+        print(string.format("Marquee Scaling Debug: text_scale=%.1f, backdrop_scale=%.1f", scale, backdrop_scale))
+        print(string.format("Bounds: left=%.1f, right=%.1f, width=%.1f", bounds_left, bounds_right, bounds_width))
+        print(string.format("Position: start_x=%.1f, actual_y=%.1f", start_x, actual_y))
+        
     else
+        -- No backdrop - use screen bounds (already in screen coordinates)
         bounds_left = 0
         bounds_right = self.screen_width
         bounds_width = self.screen_width
@@ -612,7 +678,12 @@ function TextDisplay:drawMarqueeText(player_id, marquee_id, text, y, font_name, 
         character_objects = {},
         individual_chars = {},
         original_y = y, -- Store original y for reference
-        backdrop_y = backdrop and backdrop.y or nil -- Store backdrop y for sync
+        backdrop_y = backdrop and (backdrop.y * (backdrop.scale or 2.0)) or nil, -- Store scaled backdrop y for sync
+        
+        -- NEW: finite/infinite loop controls
+        loops_remaining = _normalize_loops(backdrop and backdrop.loops),
+        on_finish       = backdrop and backdrop.on_finish,
+        keep_backdrop   = backdrop and backdrop.keep_backdrop or false,
     }
     
     -- Pre-calculate character positions for proper marquee behavior
@@ -770,16 +841,16 @@ function TextDisplay:drawMarqueeCharacters(player_id, marquee_id, marquee_data)
         end
     end
 end
-
 function TextDisplay:drawBackdrop(player_id, text_id, text_data, backdrop)
-    local padding_x = backdrop.padding_x or 4
-    local padding_y = backdrop.padding_y or 2
+    local padding_x = backdrop.padding_x or 0
+    local padding_y = backdrop.padding_y or 0
     
-    -- Use exact backdrop dimensions provided
-    local backdrop_width = backdrop.width
-    local backdrop_height = backdrop.height
-    local backdrop_x = backdrop.x
-    local backdrop_y = backdrop.y
+    -- Apply backdrop scaling if specified
+    local backdrop_scale = backdrop.scale or 2.0
+    local backdrop_width = backdrop.width * backdrop_scale
+    local backdrop_height = backdrop.height * backdrop_scale
+    local backdrop_x = backdrop.x * backdrop_scale
+    local backdrop_y = backdrop.y * backdrop_scale
     
     local backdrop_id = text_id .. "_backdrop"
     
@@ -790,7 +861,7 @@ function TextDisplay:drawBackdrop(player_id, text_id, text_data, backdrop)
             id = backdrop_id,
             x = backdrop_x,
             y = backdrop_y,
-            z = text_data.z_order - 1, -- Behind the text
+            z = text_data.z_order - 1,
             sx = backdrop_width,
             sy = backdrop_height
         }
@@ -799,8 +870,8 @@ function TextDisplay:drawBackdrop(player_id, text_id, text_data, backdrop)
     text_data.backdrop_id = backdrop_id
     text_data.backdrop_width = backdrop_width
     text_data.backdrop_height = backdrop_height
-    text_data.backdrop_padding_x = padding_x
-    text_data.backdrop_padding_y = padding_y
+    text_data.backdrop_padding_x = padding_x * backdrop_scale
+    text_data.backdrop_padding_y = padding_y * backdrop_scale
 end
 
 function TextDisplay:updateMarquees(delta)
@@ -821,42 +892,46 @@ function TextDisplay:updateMarquee(player_id, text_id, text_data, delta)
     text_data.current_x = text_data.current_x - movement
     
     -- Check if the entire text has moved completely out of bounds
+    
     if text_data.current_x + text_data.total_text_width < text_data.bounds_left then
         -- Reset to start at the right side again
         text_data.current_x = text_data.bounds_right
+        
+        if text_data.loops_remaining == nil then
+            -- Infinite: loop
+            text_data.current_x = text_data.bounds_right
+        else
+            -- Finite loops
+            if text_data.loops_remaining <= 1 then
+                -- Finished: remove text; optionally keep backdrop; call on_finish
+                -- erase individual chars
+                for _, c in ipairs(text_data.individual_chars) do
+                    if c.obj_id then
+                        Net.player_erase_sprite(player_id, c.obj_id)
+                    end
+                end
+
+                if not text_data.keep_backdrop and text_data.backdrop_id then
+                    Net.player_erase_sprite(player_id, text_data.backdrop_id)
+                end
+
+                -- Remove from active list
+                local pd = self.player_texts[player_id]
+                if pd then pd.active_texts[text_id] = nil end
+
+                if type(text_data.on_finish) == "function" then
+                    pcall(text_data.on_finish, player_id, text_id)
+                end
+                return
+            else
+                text_data.loops_remaining = text_data.loops_remaining - 1
+                text_data.current_x = text_data.bounds_right
+            end
+        end
     end
     
     -- Redraw characters at new positions
     self:drawMarqueeCharacters(player_id, text_id, text_data)
-end
-
-function TextDisplay:removeText(player_id, text_id)
-    local player_data = self.player_texts[player_id]
-    if player_data then
-        local text_data = player_data.active_texts[text_id]
-        if text_data then
-            -- Remove text display
-            if text_data.type == "marquee" then
-                -- Remove individual characters
-                for _, char_data in ipairs(text_data.individual_chars) do
-                    if char_data.obj_id then
-                        Net.player_erase_sprite(player_id, char_data.obj_id)
-                    end
-                end
-            else
-                if text_data.display_id then
-                    self.font_system:eraseTextDisplay(player_id, text_data.display_id)
-                end
-            end
-            
-            -- Remove backdrop if it exists
-            if text_data.backdrop_id then
-                Net.player_erase_sprite(player_id, text_data.backdrop_id)
-            end
-            
-            player_data.active_texts[text_id] = nil
-        end
-    end
 end
 
 function TextDisplay:updateText(player_id, text_id, new_text)
@@ -891,7 +966,7 @@ function TextDisplay:updateText(player_id, text_id, new_text)
                 
                 -- Recalculate bounds based on new text width
                 if text_data.backdrop then
-                    local padding_x = text_data.backdrop.padding_x or 4
+                    local padding_x = text_data.backdrop.padding_x or 0
                     text_data.bounds_left = text_data.backdrop.x + padding_x
                     text_data.bounds_right = text_data.backdrop.x + text_data.backdrop.width - padding_x
                     text_data.bounds_width = text_data.bounds_right - text_data.bounds_left
@@ -989,7 +1064,7 @@ function TextDisplay:addBackdrop(player_id, text_id, backdrop_config)
             
             -- For marquees, update bounds
             if text_data.type == "marquee" then
-                local padding_x = backdrop_config.padding_x or 4
+                local padding_x = backdrop_config.padding_x or 0
                 text_data.bounds_left = backdrop_config.x + padding_x
                 text_data.bounds_right = backdrop_config.x + backdrop_config.width - padding_x
                 text_data.bounds_width = text_data.bounds_right - text_data.bounds_left
