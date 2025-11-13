@@ -32,8 +32,13 @@ If you're a coder looking to build a game or experience using Net Games check ou
 
 1. [Getting Started Guide](/getting_started.md)
 2. [API Documentation](/documentation.md)
-3. Demo Server
+3. The demo server
 
-The demo server currently spawns two NPCs (besides the Simon Says NPC): the CyberBat spawns a Libertaion Order Point UI (that can be incremented by pressing LS) and whereas Protoman spawns text and a cursor allowing the player to change the bot's avatar. The code that handles each NPC is seperated and easily readable in the `demo.lua` script. 
+You'll find four NPCs on the demo server:
+> 1. _Green Navi_ that plays CyberSimon Says
+> 2. _Protoman_ spawns text and a cursor allowing the player to change the bot's avatar.
+> 3. _CyberBat 1_ spawns a Libertaion Order Point UI (that can be incremented by pressing LS)
+> 4. _CyberBat 2_ spawns a temporary marquee (moving text designed for announcements).
 
+The code that handles each NPC is seperated and easily readable in the `demo.lua` script. 
 
