@@ -20,7 +20,7 @@ function TextDisplay:init()
     -- Backdrop sprite definition
     self.backdrop_sprite = {
         sprite_id = 5000,
-        texture_path = "/server/assets/net-games/displayer/marquee-backdrop.png", -- 1x1 white pixel
+        texture_path = "/server/assets/net-games/displayer/marquee-backdrop.png", -- 240x30 Just a Black Box for now.
         anim_path = nil
     }
     
