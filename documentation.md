@@ -221,6 +221,7 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 > - `player_id` (string): The ID of the player
 > - `marquee_id` (string): Identifier of marquee to modify
 > - `speed` (string): New scroll speed ("slow", "medium", "fast")
+</details>
 
 <details><summary><h3>Timer Functions</h3></summary>
 
