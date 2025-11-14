@@ -9,7 +9,6 @@
 --the below line is required to access net-games functions
 local games = require("scripts/net-games/framework")
 
-
 ----------------------------------------------------------
 -- DEMO CODE FOR BASIC MARQUEE EXAMPLE [IN DEVELOPMENT] --
 ----------------------------------------------------------

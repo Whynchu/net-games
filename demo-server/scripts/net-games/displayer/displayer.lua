@@ -3,7 +3,6 @@
 local Displayer = {}
 Displayer.__index = Displayer
 function Displayer:init()
-    print("Setup")
     -- Initialize sub-APIs first (as empty tables)
     self.Timer = {}
     self.TimerDisplay = {}
