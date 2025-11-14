@@ -1145,7 +1145,7 @@ Net:on("player_area_transfer", function(event)
         last_position_cache[event.player_id] = {}
     end
 
-    last_position_cache[event.player_id]["area"] = Net.get_player_area(player_id)
+    last_position_cache[event.player_id]["area"] = Net.get_player_area(event.player_id)
     --transfer cosmetics
     if next(cosmetic_cache) ~= nil then
         for player_id,cosmetics in next,cosmetic_cache do
