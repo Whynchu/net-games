@@ -1,6 +1,6 @@
 --[[
 * ---------------------------------------------------------- *
-           Net Games (framework) - Version 0.06
+           Net Games (framework) - Version 0.061
 	     https://github.com/indianajson/net-games/   
 * ---------------------------------------------------------- *
 
@@ -17,6 +17,7 @@ end
 local frame = {} --holds the framework functions and returns them to whatever script is calling them
 local frozen = {} --tracks which players are currently frozen
 local last_position_cache = {}
+local cosmetic_cache = {} --tracks cosmetics for player
 local stasis_cache = {} --tracks stasis positions for each area on the server
 local cursor_cache = {} --tracks cursors currently spawned for player
 local avatar_cache = {} --tracks the original player avatar for each player
@@ -29,15 +30,13 @@ local cursor_tick = 0 --keeps cursor from being moved too quickly
 -- HELPER FUNCTIONS
 -- A variety of simple functions used for repetitive calculations and adjustments
 
-
-Net:on("player_join", function(event)
-    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.png")
-    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_gradient.animation")
-    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_thick.animation")
-    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_battle.animation")
-    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.animation")
-
-end)
+--purpose: helper function for fixOffsets
+local function round_fraction(value, denominator)
+    local int_part = math.floor(value)
+    local decimal = value - int_part
+    local n = math.floor(decimal * denominator + 0.5)
+    return int_part, n / denominator
+end
 
 --purpose: checks if a string follows a valid X,Y,Z pattern
 local function validateCords(str)
@@ -96,6 +95,40 @@ local function simple_direction(direction)
     end
 end 
 
+--purpose: converts h/v offsets to x/y offsets for UIs
+local function convertOffsets(horizontalOffset,verticalOffset,Z)
+    local xoffset = (Z/2) + ((2 * -verticalOffset + horizontalOffset) / 64)
+    local yoffset = (Z/2) + ((2 * -verticalOffset - horizontalOffset) / 64)
+    return xoffset,yoffset
+end 
+
+--purpose: adjusts offsets for UIs so they do not jitter
+local function fixOffsets(a, b)
+    -- Step 1: Round both decimals to nearest fraction of 32
+    local a_int, a_dec = round_fraction(a, 32)
+    local b_int, b_dec = round_fraction(b, 32)
+
+    -- Step 2: Adjust the difference between decimal parts
+    local diff = math.abs(a_dec - b_dec)
+    if diff < 1 then
+        -- Round diff to nearest fraction of 16
+        local diff_adj = math.floor(diff * 16 + 0.5) / 16
+        -- Set b_dec so the difference is now diff_adj, preserving the original ordering
+        if a_dec >= b_dec then
+            b_dec = a_dec - diff_adj
+        else
+            b_dec = a_dec + diff_adj
+        end
+        -- Clamp b_dec to [0, 1)
+        if b_dec < 0 then b_dec = 0 end
+        if b_dec >= 1 then b_dec = 1 - (1/32) end -- avoid rolling over
+    end
+
+    local a_final = a_int + a_dec
+    local b_final = b_int + b_dec
+    return a_final, b_final
+end
+
 
 --purpose: Shorthand for async
 local function async(p)
@@ -124,6 +157,17 @@ local function exclude_except_for(player_id,bot_id)
         end 
     end 
 end 
+
+-- ASSET PROVISION
+-- Some of these assets don't load properly unless provided to player when they join
+Net:on("player_join", function(event)
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.png")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_gradient.animation")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_thick.animation")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_battle.animation")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.animation")
+end)
+
 
 -- PLAYER FUNCTIONS
 -- Functons used to interact with the player and the framework 
@@ -205,6 +249,86 @@ function frame.unfreeze_player(player_id)
         print("[games] You can't unfreeze a player who was never frozen, who do you think you are, Chipotle?")
     end
 end
+
+--purpose: show a texture as a cosmetic on a player's avatar
+function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,visible,player_xoffset,player_yoffset)
+    return async(function ()
+    --safety checks
+    if cosmetic_id == nil or animation == nil or state == nil or player_id == nil or texture == nil or x == nil or y == nil then
+        print("[games] One or more required arguments is missing for set_cosmetic()")
+        return
+    end
+    local visibility = true
+    if visible == false then
+        visibility = false
+    end 
+    if not cosmetic_cache[player_id] then 
+        cosmetic_cache[player_id] = {}
+    end
+    if cosmetic_cache[player_id][cosmetic_id] then
+        print("[games] Player already has cosmetic named '"..cosmetic_id.."'.")
+        return 
+    end 
+
+    --add cosmetic to cache 
+    cosmetic_cache[player_id][cosmetic_id] = {id=cosmetic_id,texture=texture,x=x,y=y,visibility=visibility,animation=animation,state=state}
+    
+    --draw sprite on player
+    Net.provide_asset_for_player(player_id, texture)
+    Net.provide_asset_for_player(player_id, animation)
+    Net.player_alloc_sprite(player_id, cosmetic_id, {texture_path = texture, anim_path = animation, anim_state = state})
+    local p_xoffset = 0
+    local p_yoffset = 0
+
+    if player_xoffset then 
+        p_xoffset = player_xoffset
+    end 
+    if player_yoffset then 
+        p_yoffset = player_yoffset
+    end 
+
+    Net.player_draw_sprite(player_id, cosmetic_id,
+    {
+        id = cosmetic_id .. "_obj",
+        x = (x+120+p_xoffset)*2, 
+        y = (y+80+p_yoffset)*2,
+        sx = 2,
+        sy = 2,
+        anim_state = state
+    })
+
+    --spawn bot on player 
+    local area_id = last_position_cache[player_id]["area"]
+    local position = Net.get_player_position(player_id)
+
+    local xoffset,yoffset = convertOffsets(x*-1,y*-1,position.z+3)
+    local xoffset,yoffset = fixOffsets(xoffset,yoffset)
+
+    Net.create_bot(cosmetic_id.."_"..player_id, { area_id=area_id, warp_in=false, texture_path=texture, animation_path=animation, animation=state, x=position.x+xoffset, y=position.y+yoffset, z=position.z+3, solid=false})
+    print(position.x+xoffset,position.y+yoffset)
+    --hide bot from player (since we show it the cosmetic with a sprite)
+    Net.exclude_actor_for_player(player_id,cosmetic_id.."_"..player_id)
+
+    end)
+end 
+
+--purpose: remove a player's existing cosmetic
+function frame.remove_cosmetic(cosmetic_id,player_id)
+    if not cosmetic_cache[player_id] then 
+        print("[games] Player has no cosmetics.")
+        return
+    end
+    if not cosmetic_cache[player_id][cosmetic_id] then
+        print("[games] Player has no cosmetic '"..cosmetic_id.."'.")
+        return
+    end 
+
+    Net.remove_bot(cosmetic_id.."_"..player_id)
+    Net.player_erase_sprite(player_id,cosmetic_id.."_obj")
+    cosmetic_cache[player_id][cosmetic_id] = nil
+
+end
+
 
 --purpose: moves a frozen player from current location to specific cordinates without animation.
 function frame.move_frozen_player(player_id,X,Y,Z)
@@ -888,6 +1012,18 @@ Net:on("player_join", function(event)
         end 
     end 
 
+    --hide player exclusive cosmetics
+    if next(cosmetic_cache) ~= nil then
+        for player_id,cosmetics in next,cosmetic_cache do
+            for cosmetic_id,cosmetic_data in next, cosmetics do 
+                if cosmetic_data["visibility"] == false then
+                    Net.exclude_actor_for_player(event.player_id, cosmetic_id.."_"..player_id)
+                end
+            end
+        end 
+    end 
+
+
 end)
 
 Net:on("actor_interaction", function(event)
@@ -929,11 +1065,14 @@ Net:on("player_disconnect", function(event)
         ui_cache[event.player_id] = nil
         ui_update[event.player_id] = nil
     end
-    if next(cursor_cache) ~= nil then
-        for player_id,cursor in next,cursor_cache do
-            if next(cursor) ~= nil then
-                --print(cursor)
-                --Net.remove_bot(player_id.."-cursor-"..cursor["name"])
+    --remove cosmetics
+    if next(cosmetic_cache) ~= nil then
+        for player_id,cosmetics in next,cosmetic_cache do
+            if player_id == event.player_id then
+                for cosmetic_id,cosmetic_data in next, cosmetics do 
+                    Net.remove_bot(cosmetic_id.."_"..player_id)
+                    cosmetic_cache[player_id] = nil 
+                end
             end 
         end 
     end 
@@ -989,12 +1128,24 @@ Net:on("player_move", function(event)
     analyze_player_movement(event.player_id,event.x,event.y,event.z)
     --moves players back to stasis center if frozen
     update_stasis(event.player_id)
-
+    --update cosmetic position
+    if cosmetic_cache[event.player_id] ~= nil then
+        for cosmetic_id,cosmetic_data in next,cosmetic_cache[event.player_id] do
+            local xoffset,yoffset = convertOffsets(cosmetic_data["x"]*-1,cosmetic_data["y"]*-1,event.z+3)
+            local xoffset,yoffset = fixOffsets(xoffset,yoffset)
+            local bot_position = Net.get_bot_position(cosmetic_id.."_"..event.player_id)
+            local keyframes = {{properties={{property="Animation",value=cosmetic_data["state"]},{property="X",ease="Linear",value=bot_position.x},{property="Y",ease="Linear",value=bot_position.y},{property="Z",ease="Linear",value=bot_position.z}},duration=0}}
+            keyframes[#keyframes+1] = {properties={{property="Animation",value=cosmetic_data["state"]},{property="X",ease="Linear",value=event.x + xoffset},{property="Y",ease="Linear",value=event.y + yoffset},{property="Z",ease="Linear",value=event.z+3}},duration=.1}
+            Net.move_bot(cosmetic_id.."_"..event.player_id,event.x+xoffset,event.y+yoffset,event.z+3)
+            Net.animate_bot_properties(cosmetic_id.."_"..event.player_id, keyframes)
+        end
+    end
 end)
 
-
 Net:on("player_area_transfer", function(event)
+    --update cache position
     last_position_cache[event.player_id]["area"] = Net.get_player_area(player_id)
+    --transfer cosmetics
 end)
 
 -- Whatcha doin'? If you're here you must be a coder, or at least interesting in coding.

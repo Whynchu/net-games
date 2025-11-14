@@ -737,7 +737,7 @@ function Displayer:quickSetup(player_id, options)
     end
     
     options = options or {}
-    self:hidePlayerHUD(player_id)
+    --self:hidePlayerHUD(player_id)
     
     -- Create common UI elements
     if options.show_global_timer then

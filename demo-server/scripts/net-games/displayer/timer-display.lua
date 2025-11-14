@@ -115,7 +115,7 @@ function TimerDisplay:setupPlayerDisplays(player_id)
     }
     
     -- Hide default HUD like in the example
-    Net.toggle_player_hud(player_id)
+    --Net.toggle_player_hud(player_id)
     
     -- Setup any existing global displays for this player
     self:setupExistingGlobalDisplays(player_id)

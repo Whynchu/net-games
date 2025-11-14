@@ -9,6 +9,32 @@
 --the below line is required to access net-games functions
 local games = require("scripts/net-games/framework")
 
+-------------------------------------------
+-- DEMO CODE FOR NPC THAT GIVES COSMETIC --
+-------------------------------------------
+
+Net.create_bot("cosmo", { area_id="default", warp_in=false, texture_path="/server/assets/demo/roll.png", animation_path="/server/assets/demo/roll.animation", x=25.5, y=18.5, z=0, solid=true})
+
+local cosmo = {}
+
+Net:on("actor_interaction", function(event)
+    local cosmetic_id = "confetti"
+    if event.actor_id == "cosmo" and event.button == 0 and (cosmo[event.player_id] ~= true) then
+        local texture_path = "/server/assets/demo/shock.png"
+        local animation_path = "/server/assets/demo/shock.animation"
+        games.set_cosmetic(cosmetic_id, event.player_id, texture_path, animation_path, "cosmetic", 2, -40, true,-2)
+        cosmo[event.player_id] = true
+        Net.message_player(event.player_id, "Cosmetic enabled. So shiny!")
+    elseif event.actor_id == "cosmo" and event.button == 0 and cosmo[event.player_id] == true then
+        cosmo[event.player_id] = false
+        games.remove_cosmetic(cosmetic_id, event.player_id)
+
+        Net.message_player(event.player_id, "Cosmetic removed!")
+    end
+end)
+
+
+
 ----------------------------------------------------------
 -- DEMO CODE FOR BASIC MARQUEE EXAMPLE [IN DEVELOPMENT] --
 ----------------------------------------------------------
