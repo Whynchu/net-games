@@ -41,6 +41,27 @@
 > - `animation_state` (string): Name of animation state to play
 </details>
 
+<details><summary><h3>Cosmetic Functions</h3></summary>
+
+#### `set_cosmetic(cosmetic_id, player_id, texture, animation, state, x, y, visible, player_xoffset, player_yoffset)`
+> **Description**: Attaches a cosmetic texture to a player's avatar that follows them around.  
+> **Parameters**:
+> - `cosmetic_id` (string): Unique identifier for the cosmetic
+> - `player_id` (string): The ID of the player
+> - `texture` (string): Path to texture file
+> - `animation` (string): Path to animation file
+> - `state` (string): Initial animation state
+> - `x`, `y` (number): Screen position offsets relative to player and other players
+> - `visible` (boolean): Whether the cosmetic is visible to other players
+> - `player_xoffset`, `player_yoffset` (number): Additional position offsets for fine-tuning of player's sprite
+
+#### `remove_cosmetic(cosmetic_id, player_id)`
+> **Description**: Removes a cosmetic from a player.  
+> **Parameters**:
+> - `cosmetic_id` (string): Identifier of the cosmetic to remove
+> - `player_id` (string): The ID of the player
+</details>
+
 <details><summary><h3>Map Element Functions</h3></summary>
 
 #### `add_map_element(name, player_id, texture, animation, animation_state, X, Y, Z, exclude)`
@@ -104,10 +125,10 @@
 > - `player_id` (string): The ID of the player
 > - `animation_state` (string): New animation state
 
-#### `move_ui_element(name, player_id, X, Y, Z)`
-> **Description**: Moves a UI element to new screen position.  
+#### `update_ui_position(sprite_id, player_id, X, Y, Z)`
+> **Description**: Updates the position of a UI element while preserving other properties.  
 > **Parameters**:
-> - `name` (string): Identifier of the element to move
+> - `sprite_id` (string): Identifier of the UI element to move
 > - `player_id` (string): The ID of the player
 > - `X`, `Y` (number): New screen position offsets
 > - `Z` (number): Z-index relative to UI (not player)
@@ -295,4 +316,11 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 > **Parameters**:
 > - `countdown_id` (string): Identifier of countdown to remove
 > - `player_id` (string): The ID of the player
+
+#### `Net:on("countdown_ended")`
+> **Description**: Emitted when countdown reaches zero for a given player.  
+> **Event Data**:
+> - `player_id` (string): The ID of the player
+> - `countdown_id` (string): Identifier of the ended countdown
+
 </details>
