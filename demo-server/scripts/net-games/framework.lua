@@ -1116,10 +1116,7 @@ Net:on("tick", function(event)
     tick_gap = tick_gap - 1
     if tick_gap <= 0 then
         tick_gap = 6
-
     end
-
-
 end)
 
 Net:on("player_move", function(event)
@@ -1144,8 +1141,22 @@ end)
 
 Net:on("player_area_transfer", function(event)
     --update cache position
+    if not last_position_cache[event.player_id] then
+        last_position_cache[event.player_id] = {}
+    end
+
     last_position_cache[event.player_id]["area"] = Net.get_player_area(player_id)
     --transfer cosmetics
+    if next(cosmetic_cache) ~= nil then
+        for player_id,cosmetics in next,cosmetic_cache do
+            if player_id == event.player_id then
+                for cosmetic_id,cosmetic_data in next, cosmetics do 
+                    Net.transfer_bot(cosmetic_id.."_"..player_id,last_position_cache[event.player_id]["area"],false)
+                end
+            end 
+        end 
+    end 
+
 end)
 
 -- Whatcha doin'? If you're here you must be a coder, or at least interesting in coding.
