@@ -55,6 +55,8 @@
 > - `visible` (boolean): Whether the cosmetic is visible to other players
 > - `player_xoffset`, `player_yoffset` (number): Additional position offsets for fine-tuning of player's sprite
 
+In order for cosmetics to show up correctly you need to assign a custom animation state that is the default state, as well as, make sure you have the same animation frames for all directions (IDLE_U, WALK_DR, etc). For an example, see `/assets/demo/shock.animation`. Currently it is not possible to add direction based cosmetics. 
+
 #### `remove_cosmetic(cosmetic_id, player_id)`
 > **Description**: Removes a cosmetic from a player.  
 > **Parameters**:
