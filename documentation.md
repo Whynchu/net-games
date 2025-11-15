@@ -191,7 +191,15 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 <details><summary><h3>Text Functions</h3></summary>
 
 #### Available Fonts
+- "THICK" - Full character set
+- "BATTLE" - Full character set (but only uppercase letters and missing period)
+- "GRADIENT" - Numbers (0-9) only
+- "GRADIENT_GOLD" - Numbers (0-9) only
+- "GRADIENT_GREEN" - Numbers (0-9) only
+- "GRADIENT_TALL" - Numbers (0-9) only
+- "GRADIENT_ORANGE" - Numbers (0-9) and plus ("+") only
 
+<!--
 - "THICK" - Full character set
 - "THIN" - Full character set
 - "TINY" - Full character set
@@ -202,7 +210,7 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 - "GRADIENT_GREEN" - Numbers (0-9) only
 - "GRADIENT_TALL" - Numbers (0-9) only
 - "GRADIENT_ORANGE" - Numbers (0-9) and plus ("+") only
-
+-->
 #### `draw_text(text_id, player_id, text, X, Y, Z, font, scale)`
 > **Description**: Renders text on screen.  
 > **Parameters**:
