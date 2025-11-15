@@ -11,6 +11,13 @@ local games = require("scripts/net-games/framework")
 
 > You will then access the functions via the variable you specify. For example, if you use `games` as your variable (like the example above) you would access the functions with this variable appended to the beginning like so `games.freeze_player(player_id)`. 
 
+### Map Requirement for player_freeze()
+
+> For any server map that you need to use the player_freeze() function you will need to add a Custom Property (string) in Tiled named "Stasis" and give it an X,Y,Z coordinate (for example "15,10,2"). The coordinate must be a walkable tile in order for net-games to report button presses back to you (so you can allow players to navigate custom menus and things like that). 
+> 
+> **Important note:** The stasis location can be one of your map's existing walkable tiles as the player is made invisible when player_freeze() is called so it can be right in the middle of your walkable area and no one will see those players.  
+
+
 ### Features
 > 1. Freeze player movement while still reporting button inputs. <br>
 > &nbsp; &nbsp; For example, the moveable camera during Liberation Missions
