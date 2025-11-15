@@ -192,7 +192,7 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 
 #### Available Fonts
 - "THICK" - Full character set
-- "BATTLE" - Full character set (but only uppercase letters and missing period)
+- "BATTLE" - A-Z, 0-9, _ < > ! (use < at the beginning and > at the end for the endcaps)
 - "GRADIENT" - Numbers (0-9) only
 - "GRADIENT_GOLD" - Numbers (0-9) only
 - "GRADIENT_GREEN" - Numbers (0-9) only
