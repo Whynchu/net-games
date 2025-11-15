@@ -195,8 +195,8 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 - "THICK" - Full character set
 - "THIN" - Full character set
 - "TINY" - Full character set
-- "WIDE" - Full character set
-- "BATTLE" - Mostly complete character set (missing period)
+- "BATTLE" - Full character set (but only uppercase letters and missing period)
+- "WIDE" - Full character set (but only uppercase letters)
 - "GRADIENT" - Numbers (0-9) only
 - "GRADIENT_GOLD" - Numbers (0-9) only
 - "GRADIENT_GREEN" - Numbers (0-9) only
