@@ -185,9 +185,9 @@ Net:on("actor_interaction", function (event)
         }
 
         games.spawn_cursor("navi_changer",event.player_id,cursor_options)
-        games.draw_text("roll_label",event.player_id,"Roll.EXE",40,40,100,"THICK")
+        games.draw_text("roll_label",event.player_id,"<Roll_EXE>",40,40,100,"BATTLE")
         games.draw_text("megaman_label",event.player_id,"Megaman.EXE",40,60,100,"THICK")
-        games.draw_text("protoman_label",event.player_id,"Protoman.EXE",40,80,100,"THICK")
+        games.draw_text("protoman_label",event.player_id,"<PROTOMAN_EXE>",40,80,100,"BATTLE")
 
     end 
 end)

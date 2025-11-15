@@ -1,6 +1,6 @@
 --[[
 * ---------------------------------------------------------- *
-           Net Games (framework) - Version 0.062
+           Net Games (framework) - Version 0.063
 	     https://github.com/indianajson/net-games/   
 * ---------------------------------------------------------- *
 
@@ -162,10 +162,14 @@ end
 -- Some of these assets don't load properly unless provided to player when they join
 Net:on("player_join", function(event)
     Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.png")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_wide.animation")
     Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_gradient.animation")
     Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_thick.animation")
     Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_battle.animation")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_thin.animation")
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_tiny.animation")
     Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.animation")
+    
 end)
 
 
