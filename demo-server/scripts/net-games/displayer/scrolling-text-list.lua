@@ -177,6 +177,7 @@ function ScrollingTextList:drawListEntry(player_id, list_id, entry_index, list_d
         
         local display_id = self.font_system:drawText(
             player_id,
+            nil,
             entry_state.text,
             text_x,
             text_y,

@@ -1,6 +1,6 @@
 --[[
 * ---------------------------------------------------------- *
-           Net Games (framework) - Version 0.061
+           Net Games (framework) - Version 0.062
 	     https://github.com/indianajson/net-games/   
 * ---------------------------------------------------------- *
 
@@ -197,6 +197,7 @@ function frame.freeze_player(player_id)
         avatar_cache[player_id]["animation"] = avatar.animation_path
         -- create stunt double
         Net.create_bot(player_id.."-double", { area_id=area_id, warp_in=false, texture_path=avatar.texture_path, animation_path=avatar.animation_path, x=position.x, y=position.y, z=position.z, direction=direction, solid=true})
+
         -- hide player
         Net.set_player_avatar(player_id, empty_texture, empty_animation)
 
@@ -233,6 +234,7 @@ function frame.unfreeze_player(player_id)
         local position = Net.get_bot_position(player_id.."-double") 
         local direction = Net.get_bot_direction(player_id.."-double")
         Net.teleport_player(player_id, false, position.x, position.y, position.z, direction)
+    
         --this updates last player position to stasis so a movement isn't triggered on teleport
         if not last_position_cache[player_id] then 
             last_position_cache[player_id] = {}
@@ -245,6 +247,7 @@ function frame.unfreeze_player(player_id)
         Net.remove_bot(player_id.."-double")
         Net.unlock_player_camera(player_id)
         Net.unlock_player_input(player_id)
+
     else
         print("[games] You can't unfreeze a player who was never frozen, who do you think you are, Chipotle?")
     end

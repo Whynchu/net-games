@@ -577,7 +577,7 @@ function TextDisplay:drawText(player_id, text_id, text, x, y, z_order, font_name
     local player_data = self.player_texts[player_id]
     if not player_data then return nil end
     
-    local text_id = (text_id or "text_") .. player_data.next_obj_id
+    local text_id = text_id or ("text_" .. player_data.next_obj_id)
     player_data.next_obj_id = player_data.next_obj_id + 1
     
     local text_data = {
@@ -1036,12 +1036,13 @@ function TextDisplay:setTextPosition(player_id, text_id, x, y)
             -- Redraw text
             text_data.display_id = self.font_system:drawText(
                 player_id,
+                nil,
                 text_data.text,
                 x,
                 y,
+                text_data.z_order,
                 text_data.font,
-                text_data.scale,
-                text_data.z_order
+                text_data.scale
             )
         end
     end
