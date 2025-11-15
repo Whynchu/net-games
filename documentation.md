@@ -190,6 +190,19 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 
 <details><summary><h3>Text Functions</h3></summary>
 
+#### Available Fonts
+
+- "THICK" - Full character set
+- "THIN" - Full character set
+- "TINY" - Full character set
+- "WIDE" - Full character set
+- "BATTLE" - Mostly complete character set (missing period)
+- "GRADIENT" - Numbers (0-9) only
+- "GRADIENT_GOLD" - Numbers (0-9) only
+- "GRADIENT_GREEN" - Numbers (0-9) only
+- "GRADIENT_TALL" - Numbers (0-9) only
+- "GRADIENT_ORANGE" - Numbers (0-9) and plus ("+") only
+
 #### `draw_text(text_id, player_id, text, X, Y, Z, font, scale)`
 > **Description**: Renders text on screen.  
 > **Parameters**:
@@ -224,7 +237,7 @@ The `selections` table defines each position the cursor can occupy. The `x`, `y`
 > - `player_id` (string): The ID of the player
 > - `text` (string): Text content to scroll
 > - `y` (number): Y position (used if no backdrop provided)
-> - `font` (string): Font style ("THICK", "GRADIENT", "BATTLE")
+> - `font` (string): Font name (see Text Functions)
 > - `scale` (number): Text scale factor (default: 2.0)
 > - `z_order` (number): Rendering layer (default: 100)
 > - `speed` (string): Scroll speed ("slow", "medium", "fast")
