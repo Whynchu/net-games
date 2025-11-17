@@ -1,6 +1,6 @@
 --[[
 * ---------------------------------------------------------- *
-           Net Games (framework) - Version 0.063
+           Net Games (framework) - Version 0.064
 	     https://github.com/indianajson/net-games/   
 * ---------------------------------------------------------- *
 
@@ -999,25 +999,9 @@ Net:on("player_join", function(event)
     table.insert(online_players, event.player_id)
     --reset all caches on join
     frozen[event.player_id] = false
+    ui_cache[event.player_id] = {}
     cursor_cache[event.player_id] = {}
     avatar_cache[event.player_id] = {}
-
-    --exclude all existing UI, cursors elements from new player
-    if next(ui_cache) ~= nil then
-        for player_id,ui in next,ui_cache do
-            for name,element in next,ui do
-                Net.exclude_actor_for_player(event.player_id, player_id.."-ui-"..element["name"])
-            end 
-        end
-    end
-    if next(cursor_cache) ~= nil then
-        for player_id,cursor in next,cursor_cache do
-            if next(cursor) ~= nil then
-                --print(cursor)
-                Net.exclude_actor_for_player(event.player_id, player_id.."-cursor-"..cursor["name"])
-            end 
-        end 
-    end 
 
     --hide player exclusive cosmetics
     if next(cosmetic_cache) ~= nil then
