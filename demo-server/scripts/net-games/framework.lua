@@ -1125,6 +1125,7 @@ Net:on("player_move", function(event)
             keyframes[#keyframes+1] = {properties={{property="Animation",value=cosmetic_data["state"]},{property="X",ease="Linear",value=event.x + cosmetic_data["x"]},{property="Y",ease="Linear",value=event.y + cosmetic_data["y"]},{property="Z",ease="Linear",value=event.z+3}},duration=.1}
             Net.move_bot(cosmetic_id.."_"..event.player_id,event.x+cosmetic_data["x"],event.y+cosmetic_data["y"],event.z+3)
             Net.animate_bot_properties(cosmetic_id.."_"..event.player_id, keyframes)
+            Net.animate_bot(cosmetic_id.."_"..event.player_id,cosmetic_data["state"],true)
         end
     end
     end
