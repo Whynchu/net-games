@@ -1,6 +1,6 @@
 --[[
 * ---------------------------------------------------------- *
-           Net Games (framework) - Version 0.065
+           Net Games (framework) - Version 0.066
 	     https://github.com/indianajson/net-games/   
 * ---------------------------------------------------------- *
 
@@ -209,8 +209,12 @@ function frame.freeze_player(player_id)
         Net.track_with_player_camera(player_id,player_id.."-double")
 
         --teleport to stasis
+        local keyframes = {{properties={{property="X",ease="Linear",value=position.x},{property="Y",ease="Linear",value=position.y},{property="Z",ease="Linear",value=position.z}},duration=0}}
+        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=stasis_cache[area_id]["x"]+.5},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=stasis_cache[area_id]["y"]+.5},{property="Z",ease="Linear",value=stasis_cache[area_id]["z"]}},duration=0}
+        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=stasis_cache[area_id]["x"]+.5},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=stasis_cache[area_id]["y"]+.5},{property="Z",ease="Linear",value=stasis_cache[area_id]["z"]}},duration=1}
         Net.teleport_player(player_id, false, stasis_cache[area_id]["x"]+.5, stasis_cache[area_id]["y"]+.5, stasis_cache[area_id]["z"])
-        local direction = simple_direction(Net.get_player_direction(player_id))
+        Net.animate_player_properties(player_id, keyframes)
+        local direction = simple_direction(direction)
         local keyframes = {{properties={{property="Animation",value="IDLE_"..direction}},duration=0}}
         Net.animate_bot(player_id.."-double", "IDLE_"..direction, true)
         Net.animate_bot_properties(player_id.."-double", keyframes)
@@ -234,11 +238,17 @@ function frame.unfreeze_player(player_id)
     if frozen[player_id] == nil then
         return
     elseif Net.is_bot(player_id.."-double") and frozen[player_id] == true then
+        local area_id = last_position_cache[player_id]["area"]
         Net.lock_player_input(player_id)
         local position = Net.get_bot_position(player_id.."-double") 
         local direction = Net.get_bot_direction(player_id.."-double")
+        local keyframes = {{properties={{property="X",ease="Linear",value=stasis_cache[area_id]["x"]+.5},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=stasis_cache[area_id]["y"]+.5},{property="Z",ease="Linear",value=stasis_cache[area_id]["z"]}},duration=0}}
+        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=position.x},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=position.y},{property="Z",ease="Linear",value=position.z}},duration=0}
+        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=position.x},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=position.y},{property="Z",ease="Linear",value=position.z}},duration=1}
+
         Net.teleport_player(player_id, false, position.x, position.y, position.z, direction)
-    
+        Net.animate_player_properties(player_id, keyframes)
+
         --this updates last player position to stasis so a movement isn't triggered on teleport
         if not last_position_cache[player_id] then 
             last_position_cache[player_id] = {}
@@ -1106,6 +1116,7 @@ Net:on("player_move", function(event)
     update_stasis(event.player_id)
     --update cosmetic position
     if cosmetic_cache[event.player_id] ~= nil then
+        if frozen[event.player_id] == false then 
         for cosmetic_id,cosmetic_data in next,cosmetic_cache[event.player_id] do
             local bot_position = Net.get_bot_position(cosmetic_id.."_"..event.player_id)
             --local xoffset,yoffset = convertOffsets(cosmetic_data["x"]*-1,cosmetic_data["y"]*-1,event.z+3)
@@ -1115,6 +1126,7 @@ Net:on("player_move", function(event)
             Net.move_bot(cosmetic_id.."_"..event.player_id,event.x+cosmetic_data["x"],event.y+cosmetic_data["y"],event.z+3)
             Net.animate_bot_properties(cosmetic_id.."_"..event.player_id, keyframes)
         end
+    end
     end
 end)
 
