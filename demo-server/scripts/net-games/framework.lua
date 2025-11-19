@@ -1027,11 +1027,11 @@ Net:on("player_disconnect", function(event)
 
     --clear all caches on disconnect
     frozen[event.player_id] = nil
-    --ADD: loop for cursor to clear bots
-    if cursor_cache[event.player_id] ~= nil then
-        cursor_cache[event.player_id] = {}
-    end
-    avatar_cache[event.player_id] = {}
+    cursor_cache[event.player_id] = nil
+    avatar_cache[event.player_id] = nil
+    ui_cache[event.player_id] = nil
+    ui_update[event.player_id] = nil
+
     if Net.is_bot(event.player_id.."-double") then
         Net.remove_bot(event.player_id.."-double",false)
     end 
@@ -1044,14 +1044,6 @@ Net:on("player_disconnect", function(event)
         end
     end 
 
-    --remove UIs
-    if ui_cache[event.player_id] ~= nil then 
-        for name,element in next,ui_cache[event.player_id] do
-            --Net.remove_bot(event.player_id.."-ui-"..element["name"])
-        end
-        ui_cache[event.player_id] = nil
-        ui_update[event.player_id] = nil
-    end
     --remove cosmetics
     if next(cosmetic_cache) ~= nil then
         for player_id,cosmetics in next,cosmetic_cache do
