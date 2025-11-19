@@ -1,6 +1,6 @@
 --[[
 * ---------------------------------------------------------- *
-           Net Games (framework) - Version 0.064
+           Net Games (framework) - Version 0.065
 	     https://github.com/indianajson/net-games/   
 * ---------------------------------------------------------- *
 
@@ -97,8 +97,8 @@ end
 
 --purpose: converts h/v offsets to x/y offsets for UIs
 local function convertOffsets(horizontalOffset,verticalOffset,Z)
-    local xoffset = (Z/2) + ((2 * -verticalOffset + horizontalOffset) / 64)
-    local yoffset = (Z/2) + ((2 * -verticalOffset - horizontalOffset) / 64)
+    local xoffset = ((2 * -verticalOffset + horizontalOffset) / 64)+(Z/2)
+    local yoffset = ((2 * -verticalOffset - horizontalOffset) / 64)+(Z/2)
     return xoffset,yoffset
 end 
 
@@ -248,7 +248,7 @@ function frame.unfreeze_player(player_id)
         last_position_cache[player_id]["z"] = tonumber(position.z)
         frozen[player_id] = false 
         Net.set_player_avatar(player_id,avatar_cache[player_id]["texture"],avatar_cache[player_id]["animation"])
-        Net.remove_bot(player_id.."-double")
+        Net.remove_bot(player_id.."-double",false)
         Net.unlock_player_camera(player_id)
         Net.unlock_player_input(player_id)
 
@@ -276,9 +276,6 @@ function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,vi
         print("[games] Player already has cosmetic named '"..cosmetic_id.."'.")
         return 
     end 
-
-    --add cosmetic to cache 
-    cosmetic_cache[player_id][cosmetic_id] = {id=cosmetic_id,texture=texture,x=x,y=y,visibility=visibility,animation=animation,state=state}
     
     --draw sprite on player
     Net.provide_asset_for_player(player_id, texture)
@@ -307,12 +304,13 @@ function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,vi
     --spawn bot on player 
     local area_id = last_position_cache[player_id]["area"]
     local position = Net.get_player_position(player_id)
-
     local xoffset,yoffset = convertOffsets(x*-1,y*-1,position.z+3)
     local xoffset,yoffset = fixOffsets(xoffset,yoffset)
 
+    --add cosmetic to cache 
+    cosmetic_cache[player_id][cosmetic_id] = {id=cosmetic_id,texture=texture,x=xoffset,y=yoffset,visibility=visibility,animation=animation,state=state}
+
     Net.create_bot(cosmetic_id.."_"..player_id, { area_id=area_id, warp_in=false, texture_path=texture, animation_path=animation, animation=state, x=position.x+xoffset, y=position.y+yoffset, z=position.z+3, solid=false})
-    print(position.x+xoffset,position.y+yoffset)
     --hide bot from player (since we show it the cosmetic with a sprite)
     Net.exclude_actor_for_player(player_id,cosmetic_id.."_"..player_id)
 
@@ -330,7 +328,7 @@ function frame.remove_cosmetic(cosmetic_id,player_id)
         return
     end 
 
-    Net.remove_bot(cosmetic_id.."_"..player_id)
+    Net.remove_bot(cosmetic_id.."_"..player_id,false)
     Net.player_erase_sprite(player_id,cosmetic_id.."_obj")
     cosmetic_cache[player_id][cosmetic_id] = nil
 
@@ -411,7 +409,7 @@ end
 function frame.remove_map_element(name,player_id)
     if Net.is_bot(player_id.."-map-"..name) then 
         map_elements[player_id][name] = nil
-        Net.remove_bot(player_id.."-map-"..name)
+        Net.remove_bot(player_id.."-map-"..name,false)
     end
 end
 
@@ -446,12 +444,12 @@ function frame.add_ui_element(sprite_id,player_id,texture_path,animation_path,an
         if sprite_data["texture_path"] == texture_path then 
             already_allocated = true
             new_sprite_id = sprite_data["sprite_id"]
-            print("Using existing sprite.")
+            --print("Using existing sprite.")
         end
     end 
     
     if already_allocated == false then 
-        print("Creating new sprite.")
+        --print("Creating new sprite.")
         if animation_path ~= "" then
             Net.provide_asset_for_player(player_id, animation_path)
         end
@@ -698,7 +696,6 @@ function frame.spawn_cursor(cursor_id,player_id,options)
     --create bot and set initial cursor arrow in position cursor_cache[player_id]["selections"][1]
     local selection = cursor_cache[player_id]["selections"][1]
 
-    --print(options)
     if animation_path ~= "" then
         Net.provide_asset_for_player(player_id, options["animation"])
     end
@@ -742,7 +739,6 @@ Net:on("button_press", function(event)
         if cursor_cache[event.player_id]["locked"] == false then
             local cursor = cursor_cache[event.player_id]
             local direction = cursor["movement"]
-            --print(event.button)
             --if directional button emit move
             cursor_cache[event.player_id]["lock-tick"] = cursor_tick
             cursor_cache[event.player_id]["locked"] = true
@@ -1037,10 +1033,10 @@ Net:on("player_disconnect", function(event)
     end
     avatar_cache[event.player_id] = {}
     if Net.is_bot(event.player_id.."-double") then
-        Net.remove_bot(event.player_id.."-double")
+        Net.remove_bot(event.player_id.."-double",false)
     end 
     if Net.is_bot(event.player_id.."-camera") then
-        Net.remove_bot(event.player_id.."-camera")
+        Net.remove_bot(event.player_id.."-camera",false)
     end 
     for i,player in next,online_players do 
         if player == event.player_id then
@@ -1061,7 +1057,7 @@ Net:on("player_disconnect", function(event)
         for player_id,cosmetics in next,cosmetic_cache do
             if player_id == event.player_id then
                 for cosmetic_id,cosmetic_data in next, cosmetics do 
-                    Net.remove_bot(cosmetic_id.."_"..player_id)
+                    Net.remove_bot(cosmetic_id.."_"..player_id,false)
                     cosmetic_cache[player_id] = nil 
                 end
             end 
@@ -1119,12 +1115,12 @@ Net:on("player_move", function(event)
     --update cosmetic position
     if cosmetic_cache[event.player_id] ~= nil then
         for cosmetic_id,cosmetic_data in next,cosmetic_cache[event.player_id] do
-            local xoffset,yoffset = convertOffsets(cosmetic_data["x"]*-1,cosmetic_data["y"]*-1,event.z+3)
-            local xoffset,yoffset = fixOffsets(xoffset,yoffset)
             local bot_position = Net.get_bot_position(cosmetic_id.."_"..event.player_id)
+            --local xoffset,yoffset = convertOffsets(cosmetic_data["x"]*-1,cosmetic_data["y"]*-1,event.z+3)
+            --local xoffset,yoffset = fixOffsets(xoffset,yoffset)
             local keyframes = {{properties={{property="Animation",value=cosmetic_data["state"]},{property="X",ease="Linear",value=bot_position.x},{property="Y",ease="Linear",value=bot_position.y},{property="Z",ease="Linear",value=bot_position.z}},duration=0}}
-            keyframes[#keyframes+1] = {properties={{property="Animation",value=cosmetic_data["state"]},{property="X",ease="Linear",value=event.x + xoffset},{property="Y",ease="Linear",value=event.y + yoffset},{property="Z",ease="Linear",value=event.z+3}},duration=.1}
-            Net.move_bot(cosmetic_id.."_"..event.player_id,event.x+xoffset,event.y+yoffset,event.z+3)
+            keyframes[#keyframes+1] = {properties={{property="Animation",value=cosmetic_data["state"]},{property="X",ease="Linear",value=event.x + cosmetic_data["x"]},{property="Y",ease="Linear",value=event.y + cosmetic_data["y"]},{property="Z",ease="Linear",value=event.z+3}},duration=.1}
+            Net.move_bot(cosmetic_id.."_"..event.player_id,event.x+cosmetic_data["x"],event.y+cosmetic_data["y"],event.z+3)
             Net.animate_bot_properties(cosmetic_id.."_"..event.player_id, keyframes)
         end
     end
@@ -1153,8 +1149,6 @@ end)
 -- Whatcha doin'? If you're here you must be a coder, or at least interesting in coding.
 -- You should help out on the Discord. There's only a few of us that can actually code. 
 -- Seriously, stop reading this and come help! For real. Please. I'm begging you. 
-
---print("[games] Framework initiated")
 
 set_stasis()
 
