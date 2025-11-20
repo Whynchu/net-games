@@ -43,7 +43,7 @@
 
 <details><summary><h3>Cosmetic Functions</h3></summary>
 
-#### `set_cosmetic(cosmetic_id, player_id, texture, animation, state, x, y, visible, player_xoffset, player_yoffset)`
+#### `set_cosmetic(cosmetic_id, player_id, texture, animation, state, x, y, visible, player_xoffset, player_yoffset,anim_duration)`
 > **Description**: Attaches a cosmetic texture to a player's avatar that follows them around.  
 > **Parameters**:
 > - `cosmetic_id` (string): Unique identifier for the cosmetic
@@ -54,6 +54,8 @@
 > - `x`, `y` (number): Screen position offsets relative to player and other players
 > - `visible` (boolean): Whether the cosmetic is visible to other players
 > - `player_xoffset`, `player_yoffset` (number): Additional position offsets for fine-tuning of player's sprite
+> - `anim_duration` (number): If your cosmetic is animated provide the full length of the animation here (in seconds)
+
 
 In order for cosmetics to show up correctly you need to assign a custom animation state that is the default state, as well as, make sure you have the same animation frames for all directions (IDLE_U, WALK_DR, etc). For an example, see `/assets/demo/shock.animation`. Currently it is not possible to add direction based cosmetics. 
 
