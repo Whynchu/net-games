@@ -268,7 +268,7 @@ function frame.unfreeze_player(player_id)
 end
 
 --purpose: show a texture as a cosmetic on a player's avatar
-function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,visible,player_xoffset,player_yoffset)
+function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,visible,player_xoffset,player_yoffset,anim_duration)
     return async(function ()
     --safety checks
     if cosmetic_id == nil or animation == nil or state == nil or player_id == nil or texture == nil or x == nil or y == nil then
@@ -318,7 +318,10 @@ function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,vi
     local xoffset,yoffset = fixOffsets(xoffset,yoffset)
 
     --add cosmetic to cache 
-    cosmetic_cache[player_id][cosmetic_id] = {id=cosmetic_id,texture=texture,x=xoffset,y=yoffset,visibility=visibility,animation=animation,state=state}
+    cosmetic_cache[player_id][cosmetic_id] = {id=cosmetic_id,texture=texture,x=xoffset,y=yoffset,visibility=visibility,animation=animation,state=state,spritex=(x+120+p_xoffset)*2,spritey=(y+80+p_yoffset)*2}
+
+    cosmetic_cache[player_id][cosmetic_id]["duration"] = anim_duration or 0 
+    cosmetic_cache[player_id][cosmetic_id]["elapsed"] = 0
 
     Net.create_bot(cosmetic_id.."_"..player_id, { area_id=area_id, warp_in=false, texture_path=texture, animation_path=animation, animation=state, x=position.x+xoffset, y=position.y+yoffset, z=position.z+3, solid=false})
     --hide bot from player (since we show it the cosmetic with a sprite)
@@ -1073,24 +1076,32 @@ local tick_gap = 6
 
 Net:on("tick", function(event)
 
-    --old system for managing animation updates queued for UI elements
-    if next(ui_update) ~= nil then
-        for player_id,ui in next,ui_update do
-            for i,ui in next,ui_update[player_id] do
-                local parts = splitter(ui,"|")
-                local ui = parts[1]
-                local gap = tonumber(parts[2])
-                --change this to trigger draw 
-
-                --animation_state = ui_cache[player_id][ui]["state"]
-                --local position = Net.get_bot_position(player_id.."-ui-"..ui) 
-                --local keyframes = {{properties={{property="Animation",value=animation_state}},duration=0}}
-                --Net.animate_bot_properties(player_id.."-ui-"..ui, keyframes)
-                ui_update[player_id][i] = nil
-            end 
+    --restarts the animation on cosmetic Sprites
+    if next(cosmetic_cache) ~= nil then
+        for player_id,cosmetics in next,cosmetic_cache do
+            for cosmetic_id,cosmetic_data in next,cosmetics do
+                if cosmetic_data["duration"] ~= 0 then
+                    cosmetic_data["elapsed"] = event.delta_time + cosmetic_data["elapsed"]
+                    if cosmetic_data["elapsed"] >= cosmetic_data["duration"] then
+                        --erase the sprite , redraw the sprite
+                        Net.player_erase_sprite(player_id,cosmetic_id .. "_obj")
+                        Net.player_draw_sprite(player_id, cosmetic_id,
+                            {
+                                id = cosmetic_id .. "_obj",
+                                x = cosmetic_data["spritex"], 
+                                y = cosmetic_data["spritey"], 
+                                sx = 2,
+                                sy = 2,
+                                anim_state = state
+                            })
+                        cosmetic_data["elapsed"] = 0
+                    end 
+                end 
+            end
         end
     end
 
+    --manages keeping cursors from moving more than once per click
     if next(cursor_cache) ~= nil then
         for player_id,cursor in next,cursor_cache do
             if cursor_cache[player_id]["locked"] == true and cursor_cache[player_id]["lock-tick"] == tick_gap then
