@@ -13,19 +13,18 @@ if not Displayer:init() or not Displayer:isValid() then
     return false
 end
 
-
 local frame = {} --holds the framework functions and returns them to whatever script is calling them
-local frozen = {} --tracks which players are currently frozen
-local last_position_cache = {}
+local last_position_cache = {} --legacy cache that only tracks player's area now
+local button_states = {} --cache of latest button states from player
+local tracking_state = {} --tracks if a player's button state has remained 2 for more than X seconds
 local cosmetic_cache = {} --tracks cosmetics for player
-local stasis_cache = {} --tracks stasis positions for each area on the server
 local cursor_cache = {} --tracks cursors currently spawned for player
 local avatar_cache = {} --tracks the original player avatar for each player
-local ui_cache = {} --tracks ui elements currently spawned for player 
-local map_elements = {} --tracks map elements currently spawned for player 
-local ui_update = {} --contains data on any actively sliding/moving UI elements 
+local ui_cache = {} --tracks ui elements currently spawned for player
+local map_elements = {} --tracks map elements currently spawned for player
+local ui_update = {} --contains data on any actively sliding/moving UI elements
 local online_players = {} --contains a table of all online players for excluding elements
-local cursor_tick = 0 --keeps cursor from being moved too quickly 
+local cursor_tick = 0 --keeps cursor from being moved too quickly
 
 -- HELPER FUNCTIONS
 -- A variety of simple functions used for repetitive calculations and adjustments
@@ -176,99 +175,8 @@ end)
 -- PLAYER FUNCTIONS
 -- Functons used to interact with the player and the framework 
 
---purpose: freezes players movement while preserving access to inputs 
---usage: call to initiate stationary mini-game or UI interactions
-function frame.freeze_player(player_id)
-    return async(function ()
-        local area_id = last_position_cache[player_id]["area"]
-        if frozen[player_id] == nil then
-            return
-        elseif frozen[player_id] == true then
-            print("[games] Player already frozen. Freeze failed!")
-            return
-        elseif stasis_cache[area_id] == nil then
-            print("[games] "..area_id..".tmx didn't have a Stasis value. Freeze failed!")
-            return
-        end 
-
-        Net.lock_player_input(player_id)
-        local position = Net.get_player_position(player_id)
-        local avatar = Net.get_player_avatar(player_id)
-        local direction = Net.get_player_direction(player_id)
-        local empty_texture = "/server/assets/net-games/empty.png"
-        local empty_animation = "/server/assets/net-games/empty.animation"
-        avatar_cache[player_id]["texture"] = avatar.texture_path
-        avatar_cache[player_id]["animation"] = avatar.animation_path
-        -- create stunt double
-        Net.create_bot(player_id.."-double", { area_id=area_id, warp_in=false, texture_path=avatar.texture_path, animation_path=avatar.animation_path, x=position.x, y=position.y, z=position.z, direction=direction, solid=true})
-
-        -- hide player
-        Net.set_player_avatar(player_id, empty_texture, empty_animation)
-
-        frozen[player_id] = true 
-        Net.track_with_player_camera(player_id,player_id.."-double")
-
-        --teleport to stasis
-        local keyframes = {{properties={{property="X",ease="Linear",value=position.x},{property="Y",ease="Linear",value=position.y},{property="Z",ease="Linear",value=position.z}},duration=0}}
-        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=stasis_cache[area_id]["x"]+.5},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=stasis_cache[area_id]["y"]+.5},{property="Z",ease="Linear",value=stasis_cache[area_id]["z"]}},duration=0}
-        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=stasis_cache[area_id]["x"]+.5},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=stasis_cache[area_id]["y"]+.5},{property="Z",ease="Linear",value=stasis_cache[area_id]["z"]}},duration=.25}
-        Net.teleport_player(player_id, false, stasis_cache[area_id]["x"]+.5, stasis_cache[area_id]["y"]+.5, stasis_cache[area_id]["z"])
-        Net.animate_player_properties(player_id, keyframes)
-        local direction = simple_direction(direction)
-        local keyframes = {{properties={{property="Animation",value="IDLE_"..direction}},duration=0}}
-        Net.animate_bot(player_id.."-double", "IDLE_"..direction, true)
-        Net.animate_bot_properties(player_id.."-double", keyframes)
-
-        --this updates last player position to stasis so a movement isn't triggered on teleport
-        if not last_position_cache[player_id] then 
-            last_position_cache[player_id] = {}
-        end
-        last_position_cache[player_id]["x"] = tonumber(stasis_cache[area_id]["x"]+.5)
-        last_position_cache[player_id]["y"] = tonumber(stasis_cache[area_id]["y"]+.5)
-        last_position_cache[player_id]["z"] = tonumber(stasis_cache[area_id]["z"])
-        --enable movement in stasis
-        Net.unlock_player_input(player_id)
-        print(player_id.." is in-stasis.")
-    end)
-end
-
---purpose: releases player from freeze at the end of mini-game or non-standard UI interactions 
---usage: call to end a mini-games or non-standard UI interactions
-function frame.unfreeze_player(player_id)
-    if frozen[player_id] == nil then
-        return
-    elseif Net.is_bot(player_id.."-double") and frozen[player_id] == true then
-        local area_id = last_position_cache[player_id]["area"]
-        Net.lock_player_input(player_id)
-        local position = Net.get_bot_position(player_id.."-double") 
-        local direction = Net.get_bot_direction(player_id.."-double")
-        local keyframes = {{properties={{property="X",ease="Linear",value=stasis_cache[area_id]["x"]+.5},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=stasis_cache[area_id]["y"]+.5},{property="Z",ease="Linear",value=stasis_cache[area_id]["z"]}},duration=0}}
-        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=position.x},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=position.y},{property="Z",ease="Linear",value=position.z}},duration=0}
-        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=position.x},{property="Animation",value="IDLE_"..simple_direction(direction)},{property="Y",ease="Linear",value=position.y},{property="Z",ease="Linear",value=position.z}},duration=.25}
-
-        Net.teleport_player(player_id, false, position.x, position.y, position.z, direction)
-        Net.animate_player_properties(player_id, keyframes)
-
-        --this updates last player position to stasis so a movement isn't triggered on teleport
-        if not last_position_cache[player_id] then 
-            last_position_cache[player_id] = {}
-        end
-        last_position_cache[player_id]["x"] = tonumber(position.x)
-        last_position_cache[player_id]["y"] = tonumber(position.y)
-        last_position_cache[player_id]["z"] = tonumber(position.z)
-        frozen[player_id] = false 
-        Net.set_player_avatar(player_id,avatar_cache[player_id]["texture"],avatar_cache[player_id]["animation"])
-        Net.remove_bot(player_id.."-double",false)
-        Net.unlock_player_camera(player_id)
-        Net.unlock_player_input(player_id)
-
-    else
-        print("[games] You can't unfreeze a player who was never frozen, who do you think you are, Chipotle?")
-    end
-end
-
 --purpose: show a texture as a cosmetic on a player's avatar
-function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,visible,player_xoffset,player_yoffset,anim_duration)
+function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,visible,player_xoffset,player_yoffset)
     return async(function ()
     --safety checks
     if cosmetic_id == nil or animation == nil or state == nil or player_id == nil or texture == nil or x == nil or y == nil then
@@ -312,6 +220,9 @@ function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,vi
     })
 
     --spawn bot on player 
+    if not last_position_cache[player_id] then
+        last_position_cache[player_id] = {}
+    end 
     local area_id = last_position_cache[player_id]["area"]
     local position = Net.get_player_position(player_id)
     local xoffset,yoffset = convertOffsets(x*-1,y*-1,position.z+3)
@@ -319,9 +230,6 @@ function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,vi
 
     --add cosmetic to cache 
     cosmetic_cache[player_id][cosmetic_id] = {id=cosmetic_id,texture=texture,x=xoffset,y=yoffset,visibility=visibility,animation=animation,state=state,spritex=(x+120+p_xoffset)*2,spritey=(y+80+p_yoffset)*2}
-
-    cosmetic_cache[player_id][cosmetic_id]["duration"] = anim_duration or 0 
-    cosmetic_cache[player_id][cosmetic_id]["elapsed"] = 0
 
     Net.create_bot(cosmetic_id.."_"..player_id, { area_id=area_id, warp_in=false, texture_path=texture, animation_path=animation, animation=state, x=position.x+xoffset, y=position.y+yoffset, z=position.z+3, solid=false})
     --hide bot from player (since we show it the cosmetic with a sprite)
@@ -345,38 +253,6 @@ function frame.remove_cosmetic(cosmetic_id,player_id)
     Net.player_erase_sprite(player_id,cosmetic_id.."_obj")
     cosmetic_cache[player_id][cosmetic_id] = nil
 
-end
-
-
---purpose: moves a frozen player from current location to specific cordinates without animation.
-function frame.move_frozen_player(player_id,X,Y,Z)
-    return async(function ()
-    local area_id = last_position_cache[player_id]["area"]
-    Net.transfer_bot(player_id.."-double", area_id, false, X, Y, Z)
-    end)
-end
-
---purpose: moves a frozen player from current location to specific cordinates with walking animation. 
---status: RE-TEST
-function frame.walk_frozen_player(player_id,X,Y,Z,duration,wait)
-    return async(function ()
-        local position = Net.get_bot_position(player_id.."-double") 
-        local keyframes = {{properties={{property="X",ease="Linear",value=position.x},{property="Y",ease="Linear",value=position.y},{property="Z",ease="Linear",value=position.z}},duration=0}}
-        keyframes[#keyframes+1] = {properties={{property="X",ease="Linear",value=X},{property="Y",ease="Linear",value=Y},{property="Z",ease="Linear",value=Z}},duration=duration}
-        Net.move_bot(player_id.."-double",X,Y,Z)
-        Net.animate_bot_properties(player_id.."-double", keyframes)
-        if wait == true then 
-            await(Async.sleep(duration+.5))
-        end
-    end)
-end
-
---purpose: animates a frozen player using a specific animation. 
-function frame.animate_frozen_player(player_id,animation_state)
-    return async(function ()
-    local keyframes = {{properties={{property="Animation",value=animation_state}},duration=1}}
-    Net.animate_bot_properties(player_id.."-double", keyframes)
-    end)
 end
 
 -- MAP FUNCTIONS
@@ -690,14 +566,9 @@ end
 --purpose: spawns a cursor that shifts between options based on a table of information provided
 function frame.spawn_cursor(cursor_id,player_id,options) 
     return async(function ()
-    --player is forcibly frozen
-    if frozen[player_id] == nil then 
-        await(frame.freeze_player(player_id))
-    elseif frozen[player_id] == false then
-        await(frame.freeze_player(player_id))
-    end 
+
+    Net.lock_player_input(player_id)
     --setup variables from provided options
-    local area_id = last_position_cache[player_id]["area"]
     if cursor_cache[player_id] ~= nil then if next(cursor_cache[player_id]) ~= nil then if cursor_cache[player_id] ~= {} then
         print("[games] You already got a cursor for that user, remove it first.") 
         return 
@@ -742,45 +613,19 @@ end
 function frame.remove_cursor(cursor_id,player_id)
     cursor_cache[player_id] = nil
     Net.player_erase_sprite(player_id, cursor_id .. "_obj")
-    frame.unfreeze_player(player_id)
 end
-
---purpose: logic to check if cursor is active and emit corresponding events
-Net:on("button_press", function(event)
-    return async(function ()
-    if cursor_cache[event.player_id] ~= nil then
-        if cursor_cache[event.player_id]["locked"] == false then
-            local cursor = cursor_cache[event.player_id]
-            local direction = cursor["movement"]
-            --if directional button emit move
-            cursor_cache[event.player_id]["lock-tick"] = cursor_tick
-            cursor_cache[event.player_id]["locked"] = true
-
-            if ((event.button == "D" or event.button == "U") and direction=="vertical") or
-            ((event.button == "L" or event.button == "R") and direction=="horizontal") or
-            (event.button == "LS" and direction=="shoulder") then
-                Net:emit("cursor_move", {player_id = event.player_id, cursor = cursor["name"], selection = cursor["current"], button = event.button})
-            --if A button emit selection
-            elseif event.button == "A" then
-                Net:emit("cursor_selection", {player_id = event.player_id,cursor = cursor["name"],selection = cursor_cache[event.player_id]["selections"][cursor["current"]]["name"]})
-            end
-
-        end 
-    end
-    end)
-end)
 
 --purpose: handles cursor movement logic
 --usage: for framework only, use the Game:on("cursor_hover") to respond to cursor movements.
 Net:on("cursor_move", function(event)
     local last_selection = cursor_cache[event.player_id]["current"]
-    if event.button == "L" or event.button == "LS" or event.button == "U" then
+    if event.button == "Move Left" or event.button == "Shoulder L" or event.button == "Move Up" then
         if last_selection == 1 then
             cursor_cache[event.player_id]["current"] = #cursor_cache[event.player_id]["selections"]
         else 
             cursor_cache[event.player_id]["current"] = last_selection - 1
         end 
-    elseif event.button == "R" or event.button == "D" then
+    elseif event.button == "Move Right" or event.button == "Move Down" or event.button == "Shoulder R" then
         if last_selection == #cursor_cache[event.player_id]["selections"] then
             cursor_cache[event.player_id]["current"] = 1
         else 
@@ -799,32 +644,6 @@ end)
 -- NON-CODER FUNCTIONS
 -- The functions in this section are framework management only, you shouldn't call these in your code. 
 
---purpose: sets the stasis chamber location used during freeze_player() 
---usage: automatically called on server boot and creates a stasis tile high on every map 
-local function set_stasis()
-	local areas = Net.list_areas()
-    for i, area_id in next, areas do
-        local area_id = tostring(area_id)
-        if Net.get_area_custom_property(area_id, "Stasis") ~= nil then
-            local cords = Net.get_area_custom_property(area_id, "Stasis")
-            if validateCords(cords) == true then
-                stasis_cache[area_id] = {}
-                local parts = {}
-                local prop = Net.get_area_custom_property(area_id, "Stasis")
-                for part in prop:gmatch("([^,]+)") do
-                    table.insert(parts, part)
-                end
-                stasis_cache[area_id]["x"] = parts[1]
-                stasis_cache[area_id]["y"] = parts[2]
-                stasis_cache[area_id]["z"] = parts[3]
-                --print ("[games] Stasis for "..area_id.." set to "..prop)
-            else
-                print ("[games] Stasis for "..area_id.." not set, cords were malformed.")
-            end
-        end 
-	end
-end
-
 --purpose: splits a string based on a delimiter
 --usage: used at various points to seperate values
 local function splitter(inputstr, sep)
@@ -841,164 +660,6 @@ local function splitter(inputstr, sep)
     return t
 end
 
---purpose: converts button presses from tile_interaction into names
---usage: runs automatically when tile interaction detected
-local function process_button_press(player_id,button)
-    --converts number to letter 
-    if button == 0 then
-        button = "A" --Interact
-    elseif button == 1 then
-        button = "LS" --Left Shoulder 
-    end 
-
-    Net:emit("button_press", {player_id = player_id, button = button})
-end 
-
---purpose: checks player movements as they happen and returns the direction, speed, and whether they are the same as last reported
---usage: called automatically by Net:on("player_move")
-local function analyze_player_movement(player_id,x,y,z) --was process_movement_event
-    local direction = ""
-    local speed = ""
-    local direction_match = false
-    local speed_match = false
-
-    if not last_position_cache[player_id] then 
-        last_position_cache[player_id] = {}
-        last_position_cache[player_id]["area"] = Net.get_player_area(player_id) 
-        last_position_cache[player_id]["x"] = tonumber(x)
-        last_position_cache[player_id]["y"] = tonumber(y)
-        last_position_cache[player_id]["z"] = tonumber(z)
-        last_position_cache[player_id]["d"] = ""
-        last_position_cache[player_id]["pd"] = ""
-        last_position_cache[player_id]["s"] = ""
-        last_position_cache[player_id]["ps"] = ""
-        return
-    end
-    local area_id = last_position_cache[player_id]["area"]
-    local position = stasis_cache[area_id]
-
-    --running
-    if (last_position_cache[player_id]["x"] - x) > 0.3 and (last_position_cache[player_id]["y"] - y) > 0.3 then
-        speed = "run"
-        direction = "U"
-    elseif (last_position_cache[player_id]["x"] - x) > 0.3 and (last_position_cache[player_id]["y"] - y) == 0 then
-        speed = "run"
-        direction = "UL"
-    elseif (last_position_cache[player_id]["x"] - x) == 0 and (last_position_cache[player_id]["y"] - y) > 0.3 then
-        speed = "run"
-        direction = "UR"
-    elseif (x - last_position_cache[player_id]["x"]) == 0 and (y - last_position_cache[player_id]["y"]) > 0.3 then
-        speed = "run"
-        direction = "DL"
-    elseif (x - last_position_cache[player_id]["x"]) > 0.3 and (y - last_position_cache[player_id]["y"]) == 0 then
-        speed = "run"
-        direction = "DR"
-    elseif (x - last_position_cache[player_id]["x"]) > 0.3 and (y - last_position_cache[player_id]["y"]) > 0.3 then
-        speed = "run"
-        direction = "D"
-    elseif (x - last_position_cache[player_id]["x"]) > 0.19 and (y - last_position_cache[player_id]["y"]) < -0.19 then
-        speed = "run"
-        direction = "R"
-    elseif (x - last_position_cache[player_id]["x"]) < -0.19 and (y - last_position_cache[player_id]["y"]) > 0.19 then
-        speed = "run"
-        direction = "L"
-
-    --walking
-    elseif (last_position_cache[player_id]["x"] - x) > .01 and (last_position_cache[player_id]["y"] - y) > .01 then
-        speed = "walk"
-        direction = "U"
-    elseif (last_position_cache[player_id]["x"] - x) > .01 and (last_position_cache[player_id]["y"] - y) == 0 then
-        speed = "walk"
-        direction = "UL"
-    elseif (last_position_cache[player_id]["x"] - x) == 0 and (last_position_cache[player_id]["y"] - y) > .01 then
-        speed = "walk"
-        direction = "UR"
-    elseif (x - last_position_cache[player_id]["x"]) == 0 and (y - last_position_cache[player_id]["y"]) > .01 then
-        speed = "walk"
-        direction = "DL"
-    elseif (x - last_position_cache[player_id]["x"]) > .01 and (y - last_position_cache[player_id]["y"]) == 0 then
-        speed = "walk"
-        direction = "DR"
-        
-    elseif (x - last_position_cache[player_id]["x"]) > .01 and (y - last_position_cache[player_id]["y"]) > .01 then
-        speed = "walk"
-        direction = "D"
-    elseif (x - last_position_cache[player_id]["x"]) > .01 and (y - last_position_cache[player_id]["y"]) < -.01 then
-        speed = "walk"
-        direction = "R"
-    elseif (x - last_position_cache[player_id]["x"]) < -.01 and (y - last_position_cache[player_id]["y"]) > .01 then
-        speed = "walk"
-        direction = "L"
-    else
-        speed = "walk"
-        direction="none"
-    end 
-
-    --direction reported by Net.get_player_direction() is delayed so we use this instead.
-    last_position_cache[player_id]["x"] = tonumber(x)
-    last_position_cache[player_id]["y"] = tonumber(y)
-    last_position_cache[player_id]["z"] = tonumber(z)
-    --log previous direction for tracking
-    if last_position_cache[player_id]["d"] ~= "" then
-        if last_position_cache[player_id]["pd"] ~= "" then
-            if last_position_cache[player_id]["pd"] == last_position_cache[player_id]["d"] then 
-                --same direction from last event
-                direction_match = true
-            else 
-                --different direction from last event
-                direction_match = false
-            end 
-        end 
-        last_position_cache[player_id]["pd"] = last_position_cache[player_id]["d"]
-    end 
-    --set current direction
-    if direction == none then 
-        last_position_cache[player_id]["d"] = last_position_cache[player_id]["d"]
-    else
-        last_position_cache[player_id]["d"] = direction
-    end 
-    --log previous speed for tracking
-    if last_position_cache[player_id]["s"] ~= "" then
-        if last_position_cache[player_id]["ps"] ~= "" then
-            if last_position_cache[player_id]["ps"] == last_position_cache[player_id]["s"] then 
-                --same speed from last event
-                speed_match = true
-            else 
-                --different speed from last event
-                speed_match = false
-            end 
-        end 
-        last_position_cache[player_id]["ps"] = last_position_cache[player_id]["s"]
-    end 
-    --set current speed
-    last_position_cache[player_id]["s"] = speed
-
-    if direction ~= "" then
-            Net:emit("button_press", {player_id = player_id, button = direction})
-    end
-    local same = false
-    if speed_match == true and direction_match == true then
-        same = true
-    end
-
-    return {speed = last_position_cache[player_id]["s"], direction = last_position_cache[player_id]["d"], same = same}
-end 
-
-local function update_stasis(player_id)
-    return async(function ()
-        --reset player position if they are in stasis
-        if frozen[player_id] then if frozen[player_id] == true then
-            local area_id = Net.get_player_area(player_id) 
-            local position = stasis_cache[area_id]
-            --if player frozen, move back to center of stasis. 
-            last_position_cache[player_id]["x"] = tonumber(position.x+.5)
-            last_position_cache[player_id]["y"] = tonumber(position.y+.5)
-            last_position_cache[player_id]["z"] = tonumber(position.z)
-            Net.teleport_player(player_id, false, position.x+.5, position.y+.5, position.z)
-        end end 
-    end)
-end 
-
 -- NON-CODER EVENTS
 -- The events in this section are framework management; "no touchie, no touch"! 
 
@@ -1007,7 +668,6 @@ Net:on("player_join", function(event)
     
     table.insert(online_players, event.player_id)
     --reset all caches on join
-    frozen[event.player_id] = false
     ui_cache[event.player_id] = {}
     cursor_cache[event.player_id] = {}
     avatar_cache[event.player_id] = {}
@@ -1026,20 +686,9 @@ Net:on("player_join", function(event)
 
 end)
 
-Net:on("actor_interaction", function(event)
-    --emits event on A and L Shoulder press.
-    process_button_press(event.player_id,event.button)
-end)
-
-Net:on("tile_interaction", function(event)
-    --emits event on A and L Shoulder press.
-    process_button_press(event.player_id,event.button)
-end)
-
 Net:on("player_disconnect", function(event)
 
     --clear all caches on disconnect
-    frozen[event.player_id] = nil
     cursor_cache[event.player_id] = nil
     avatar_cache[event.player_id] = nil
     ui_cache[event.player_id] = nil
@@ -1076,58 +725,64 @@ local tick_gap = 6
 
 Net:on("tick", function(event)
 
-    --restarts the animation on cosmetic Sprites
-    if next(cosmetic_cache) ~= nil then
-        for player_id,cosmetics in next,cosmetic_cache do
-            for cosmetic_id,cosmetic_data in next,cosmetics do
-                if cosmetic_data["duration"] ~= 0 then
-                    cosmetic_data["elapsed"] = event.delta_time + cosmetic_data["elapsed"]
-                    if cosmetic_data["elapsed"] >= cosmetic_data["duration"] then
-                        --erase the sprite , redraw the sprite
-                        Net.player_erase_sprite(player_id,cosmetic_id .. "_obj")
-                        Net.player_draw_sprite(player_id, cosmetic_id,
-                            {
-                                id = cosmetic_id .. "_obj",
-                                x = cosmetic_data["spritex"], 
-                                y = cosmetic_data["spritey"], 
-                                sx = 2,
-                                sy = 2,
-                                anim_state = state
-                            })
-                        cosmetic_data["elapsed"] = 0
-                    end 
-                end 
-            end
+    --manages emitting state = 4 if player is using a button to scroll
+    for player_id,buttons in next,button_states do
+        if not tracking_state[player_id] then
+            tracking_state[player_id] = {}
         end
-    end
-
-    --manages keeping cursors from moving more than once per click
-    if next(cursor_cache) ~= nil then
-        for player_id,cursor in next,cursor_cache do
-            if cursor_cache[player_id]["locked"] == true and cursor_cache[player_id]["lock-tick"] == tick_gap then
-                cursor_cache[player_id]["locked"] = false
-                cursor_cache[player_id]["lock-tick"] = 20 --out of range so never triggers
+        for name,state in next,buttons do
+            if not tracking_state[player_id][name] then 
+                tracking_state[player_id][name] = {}
+                tracking_state[player_id][name]["tracked"] = 0
+            end 
+            if state == 2 then
+                if tracking_state[player_id][name]["tracked"] == 0 then
+                    tracking_state[player_id][name]["elapsed"] = 0
+                    tracking_state[player_id][name]["tracked"] = 1
+                else
+                    tracking_state[player_id][name]["elapsed"] = event.delta_time + tracking_state[player_id][name]["elapsed"]
+                end 
+                if tracking_state[player_id][name]["elapsed"] > .3 and tracking_state[player_id][name]["tracked"] == 1 then
+                    tracking_state[player_id][name]["elapsed"] = 0
+                    Net:emit("virtual_input",{player_id = player_id,events={{state=4,name=name}}})
+                    tracking_state[player_id][name]["tracked"] = 2
+                elseif tracking_state[player_id][name]["elapsed"] > .1 and tracking_state[player_id][name]["tracked"] == 2 then
+                    tracking_state[player_id][name]["elapsed"] = 0
+                    Net:emit("virtual_input",{player_id = player_id,events={{state=4,name=name}}})
+                end 
+            else 
+                tracking_state[player_id][name]["tracked"] = 0
+                tracking_state[player_id][name]["elapsed"] = 0
             end 
         end
-    end
+    end        
 
-    --tick tracker for cursor updates
-    cursor_tick = tick_gap
-    tick_gap = tick_gap - 1
-    if tick_gap <= 0 then
-        tick_gap = 6
+end)
+
+--purpose: logic to check if cursor is active and emit corresponding events
+Net:on("virtual_input", function(event)
+
+    --move this code to check button presses every tick 
+    if cursor_cache[event.player_id] ~= nil then
+        local cursor = cursor_cache[event.player_id]
+        local direction = cursor["movement"]
+        for i,button in next,event.events do
+            if ((button.name == "Move Down" or button.name == "Move Up") and direction=="vertical" and (button.state==1 or button.state==4)) or
+            ((button.name == "Move Left" or button.name == "Move Right") and direction=="horizontal" and (button.state==1 or button.state==4)) or
+            ((button.name == "Shoulder L" or button.name == "Shoulder R") and direction=="shoulder" and (button.state==1 or button.state==4)) then
+                Net:emit("cursor_move", {player_id = event.player_id, cursor = cursor["name"], selection = cursor["current"], button = button.name})
+            --if A button emit selection
+            elseif (button.name == "Interact" or button.name == "Confirm") and button.state==1 then
+                Net:emit("cursor_selection", {player_id = event.player_id,cursor = cursor["name"],selection = cursor_cache[event.player_id]["selections"][cursor["current"]]["name"]})
+            end
+        end
     end
 end)
 
 Net:on("player_move", function(event)
 
-    --emits event on d-pad press
-    analyze_player_movement(event.player_id,event.x,event.y,event.z)
-    --moves players back to stasis center if frozen
-    update_stasis(event.player_id)
     --update cosmetic position
     if cosmetic_cache[event.player_id] ~= nil then
-        if frozen[event.player_id] == false then 
         for cosmetic_id,cosmetic_data in next,cosmetic_cache[event.player_id] do
             local bot_position = Net.get_bot_position(cosmetic_id.."_"..event.player_id)
             --local xoffset,yoffset = convertOffsets(cosmetic_data["x"]*-1,cosmetic_data["y"]*-1,event.z+3)
@@ -1138,7 +793,6 @@ Net:on("player_move", function(event)
             Net.animate_bot_properties(cosmetic_id.."_"..event.player_id, keyframes)
             Net.animate_bot(cosmetic_id.."_"..event.player_id,cosmetic_data["state"],true)
         end
-    end
     end
 end)
 
@@ -1159,13 +813,21 @@ Net:on("player_area_transfer", function(event)
             end 
         end 
     end 
+end)
+
+Net:on("virtual_input", function(event) 
+    --pass inputs to cache
+    if not button_states[event.player_id] then
+        button_states[event.player_id] = {}
+    end 
+    for i,button in next,event.events do
+        button_states[event.player_id][button.name] = button.state
+    end
 
 end)
 
 -- Whatcha doin'? If you're here you must be a coder, or at least interesting in coding.
 -- You should help out on the Discord. There's only a few of us that can actually code. 
 -- Seriously, stop reading this and come help! For real. Please. I'm begging you. 
-
-set_stasis()
 
 return frame

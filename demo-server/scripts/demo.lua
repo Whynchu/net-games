@@ -77,7 +77,6 @@ Net:on("actor_interaction", function(event)
     end
 end)
 
-
 Net:on("player_join", function(event)
     marquee_active[event.player_id] = false
 end)
@@ -94,32 +93,43 @@ local bat_active = {}
 
 Net.create_bot("bat", { area_id="default", warp_in=false, texture_path="/server/assets/demo/cyber_bat.png", animation_path="/server/assets/demo/cyber_bat.animation", x=26, y=21, z=0, solid=true})
 
-Net:on("button_press", function(event)
-    if event.button == "LS" and bat_active[event.player_id] == true then
-        if points > 0 then
-            points = points - 1 
-            games.set_ui_animation("points",event.player_id,tostring(points.."POINT"),true)
-        else 
-            points = 8
-            games.set_ui_animation("points",event.player_id,tostring(points.."POINT"),true)
+Net:on("virtual_input", function(event)
+    if bat_active[event.player_id] == true then 
+        for i,button in next,event.events do 
+            if button.name == "Shoulder R" and button.state == 1 then 
+                if points > 0 then
+                    points = points - 1 
+                    games.set_ui_animation("points",event.player_id,tostring(points.."POINT"),true)
+                else
+                    points = 8
+                    games.set_ui_animation("points",event.player_id,tostring(points.."POINT"),true)
+                end
+            elseif button.name == "Shoulder L" and button.state == 1 then
+                if points < 8 then
+                    points = points + 1 
+                    games.set_ui_animation("points",event.player_id,tostring(points.."POINT"),true)
+                else
+                    points = 0
+                    games.set_ui_animation("points",event.player_id,tostring(points.."POINT"),true)
+                end
+            elseif button.name == "Move Down" or button.name == "Move Left" or button.name == "Move Right" or button.name == "Move Up" and button.state == 1 then
+                games.remove_ui_element("points",event.player_id)
+                bat_active[event.player_id] = false
+                Net.unlock_player_input(event.player_id)
+            end 
         end 
-    end
-        
+    end 
 end)
 
 Net:on("actor_interaction", function (event)
 
     if event.actor_id == "bat" and event.button == 0 and bat_active[event.player_id] == false then
         points = 8
-        Net.message_player(event.player_id, "I grant you 8 Order Points. Press LS to reduce them. Talk to me again to remove it.","","") 
+        Net.message_player(event.player_id, "Press Left Shoulder to incfease and Right Shoulder to decrease. Press any arrow key to stop.","","") 
+        Net.lock_player_input(event.player_id)
         games.add_ui_element("points",event.player_id,"/server/assets/demo/order_points.png","/server/assets/demo/order_points.animation","8POINT",161,2,0)
         bat_active[event.player_id] = true
-
-    elseif event.actor_id == "bat" and event.button == 0 and bat_active[event.player_id] == true then
-        Net.message_player(event.player_id, "Let me get rid of that UI for you.","","") 
-        games.remove_ui_element("points",event.player_id)
-        bat_active[event.player_id] = false
-    end
+    end 
 end)
 
 Net:on("player_join", function(event)
