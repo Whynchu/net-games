@@ -1,6 +1,6 @@
 --[[
 * ---------------------------------------------------------- *
-           Net Games (framework) - Version 0.068
+           Net Games (framework) - Version 0.07
 	     https://github.com/indianajson/net-games/   
 * ---------------------------------------------------------- *
 
