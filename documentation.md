@@ -4,41 +4,47 @@
 
 <details><summary><h3>Player Functions</h3></summary>
 
-#### `freeze_player(player_id)`
-> **Description**: Freezes the player's movement while preserving input access.  
-> **Parameters**:
-> - `player_id` (string): The ID of the player to freeze  
+#### `Net:on("virtual_input")`
+> **Description**: Emitted when the player is online and their **input is locked**, the client will emit virtual key press information for server owners to respond to in their own custom game states. (This is a built-in function of v2.1 which has been extended to include a new button state. 
 
-#### `unfreeze_player(player_id)`
-> **Description**: Releases a player from being frozen, returning them to their original position.  
-> **Parameters**:
-> - `player_id` (string): The ID of the player to unfreeze
-
-#### `Net:on("button_press")`
-> **Description**: Called when a button pressed by a player, useful to get inputs when player is frozen. 
 > **Parameters**:
 > - `event.player_id` (string): The ID of the frozen player
-> - `event.button` (string): The button can be "A","LS","U","D","L","R","DR","DL","UR", or "UL"
+> - `event.events` (object): An object with a table for every input affected, each table will have:
+> > - `name` - the name of the virtual key input
+> > - `state` - an enum of the possible input states
 
-#### `move_frozen_player(player_id, X, Y, Z)`
-> **Description**: Instantly moves a frozen player to specified coordinates without animation.  
-> **Parameters**:
-> - `player_id` (string): The ID of the frozen player
-> - `X`, `Y`, `Z` (number): Target coordinates
+The name states can those found in the in-game config:
+- `Interact`
+- `Confirm`
+- `Shoot`
+- `Special`
+- `Move Up`
+- `Move Down`
+- `Move Left` 
+- `Move Righr`
+- `Shoulder R`
+- `Shoulder L`
+- `Pause`
+- `UI Up`
+- `UI Down`
+- `UI Left`
+- `UI Right`
 
-#### `walk_frozen_player(player_id, X, Y, Z, duration, wait)`
-> **Description**: Moves a frozen player to coordinates with walking animation.  
-> **Parameters**:
-> - `player_id` (string): The ID of the frozen player
-> - `X`, `Y`, `Z` (number): Target coordinates
-> - `duration` (number): Animation duration in seconds
-> - `wait` (boolean): Whether to wait for animation to complete  
+The input states can be 
+- `1` - Pressed
+- `2` - Held
+- `3` - Released
+- `4` - Scrolling (rate limited to handle smooth scrolling of lists)
 
-#### `animate_frozen_player(player_id, animation_state)`
-> **Description**: Plays an animation on the frozen player's avatar.  
-> **Parameters**:
-> - `player_id` (string): The ID of the frozen player
-> - `animation_state` (string): Name of animation state to play
+> If there are no input events found for some given `name`, then
+> this indicates that no input event has occured. For example, a button
+> pressed for more than 1 frame is followed by a button held event.
+> When the player releases either `pressed` or `held`, a `release` event is emitted.
+> After `release`, there will be no more button states in the `events` table
+> for that button.
+>
+> See the demo server for an example of interacting with this event for both the Order Point CyberBat and the Avatar Changer Protoman.
+
 </details>
 
 <details><summary><h3>Cosmetic Functions</h3></summary>
