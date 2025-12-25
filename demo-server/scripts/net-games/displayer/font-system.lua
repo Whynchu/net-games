@@ -53,6 +53,56 @@ function FontSystem:init()
             texture_path = "/server/assets/net-games/fonts_compressed.png",
             anim_path = "/server/assets/net-games/fonts_battle.animation", 
             anim_state = "BATTLE_0"
+        },
+        THICK_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png",
+            anim_path = "/server/assets/net-games/fonts_thick.animation",
+            anim_state = "THICK_0" -- Default state
+        },
+        GRADIENT_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
+            anim_path = "/server/assets/net-games/fonts_gradient.animation",
+            anim_state = "GRADIENT_0"
+        },
+        GRADIENT_GOLD_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
+            anim_path = "/server/assets/net-games/fonts_gradient.animation",
+            anim_state = "GRADIENT_GOLD_0"
+        },
+        GRADIENT_ORANGE_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
+            anim_path = "/server/assets/net-games/fonts_gradient.animation",
+            anim_state = "GRADIENT_ORANGE_0"
+        },
+        GRADIENT_GREEN_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
+            anim_path = "/server/assets/net-games/fonts_gradient.animation",
+            anim_state = "GRADIENT_GREEN_0"
+        },
+        GRADIENT_TALL_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
+            anim_path = "/server/assets/net-games/fonts_gradient.animation",
+            anim_state = "GRADIENT_TALL_0"
+        },
+        THIN_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
+            anim_path = "/server/assets/net-games/fonts_thin.animation",
+            anim_state = "THIN_0"
+        },
+        WIDE_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
+            anim_path = "/server/assets/net-games/fonts_wide.animation",
+            anim_state = "WIDE_0"
+        },
+        TINY_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
+            anim_path = "/server/assets/net-games/fonts_tiny.animation",
+            anim_state = "TINY_0"
+        },
+        BATTLE_BLACK = {
+            texture_path = "/server/assets/net-games/fonts_dark_compressed.png",
+            anim_path = "/server/assets/net-games/fonts_battle.animation", 
+            anim_state = "BATTLE_0"
         }
     }
     
@@ -140,6 +190,100 @@ function FontSystem:init()
             ['"'] = 5, [":"] = 5, [";"] = 5
         },
         WIDE = {
+            ["A"] = 7, ["B"] = 6, ["C"] = 6, ["D"] = 6, ["E"] = 6, ["F"] = 6,
+            ["G"] = 6, ["H"] = 6, ["I"] = 6, ["J"] = 6, ["K"] = 6, ["L"] = 6,
+            ["M"] = 6, ["N"] = 6, ["O"] = 6, ["P"] = 6, ["Q"] = 7, ["R"] = 6,
+            ["S"] = 6, ["T"] = 6, ["U"] = 6, ["V"] = 6, ["W"] = 6, ["X"] = 6,
+            ["Y"] = 6, ["Z"] = 6, ["0"] = 6, ["1"] = 6, ["2"] = 6, ["3"] = 6,
+            ["4"] = 6, ["5"] = 6, ["6"] = 6, ["7"] = 6, ["8"] = 6, ["9"] = 6,
+            ["("] = 6, [")"] = 6, ["_"] = 6, ["-"] = 6, ["+"] = 6, ["="] = 6,
+            ["\\"] = 6, ["/"] = 6, ["<"] = 6, [">"] = 6, ["?"] = 6, [","] = 6,
+            ["."] = 6, ["!"] = 6, ["@"] = 7, ["#"] = 6, ["$"] = 6, ["%"] = 6,
+            ["^"] = 6, ["&"] = 6, ["*"] = 6, ["'"] = 6, ['"'] = 6, [":"] = 6,
+            [";"] = 6
+        },
+        THICK_BLACK = {
+            ["0"] = 6, ["1"] = 6, ["2"] = 6, ["3"] = 6, ["4"] = 6, ["5"] = 6,
+            ["6"] = 6, ["7"] = 6, ["8"] = 6, ["9"] = 6, [":"] = 6, ["."] = 6,
+            ["-"] = 6, [" "] = 6, ["A"] = 6, ["B"] = 6, ["C"] = 6, ["D"] = 6,
+            ["E"] = 6, ["F"] = 6, ["G"] = 6, ["H"] = 6, ["I"] = 6, ["J"] = 6,
+            ["K"] = 6, ["L"] = 6, ["M"] = 6, ["N"] = 6, ["O"] = 6, ["P"] = 6,
+            ["Q"] = 6, ["R"] = 6, ["S"] = 6, ["T"] = 6, ["U"] = 6, ["V"] = 6,
+            ["W"] = 6, ["X"] = 6, ["Y"] = 6, ["Z"] = 6, ["a"] = 6, ["b"] = 6,
+            ["c"] = 6, ["d"] = 6, ["e"] = 6, ["f"] = 6, ["g"] = 6, ["h"] = 6,
+            ["i"] = 6, ["j"] = 6, ["k"] = 6, ["l"] = 6, ["m"] = 6, ["n"] = 6,
+            ["o"] = 6, ["p"] = 6, ["q"] = 6, ["r"] = 6, ["s"] = 6, ["t"] = 6,
+            ["u"] = 6, ["v"] = 6, ["w"] = 6, ["x"] = 6, ["y"] = 6, ["z"] = 6,
+            ["!"] = 6, ["@"] = 6, ["#"] = 6, ["$"] = 6, ["%"] = 6, ["^"] = 6,
+            ["&"] = 6, ["*"] = 6, ["("] = 6, [")"] = 6, ["_"] = 6, ["+"] = 6,
+            ["="] = 6, ["["] = 6, ["]"] = 6, ["{"] = 6, ["}"] = 6, ["|"] = 6,
+            ["\\"] = 6, ["/"] = 6, ["<"] = 6, [">"] = 6, [","] = 6, ["?"] = 6
+        },
+        GRADIENT_GOLD_BLACK = {
+            ["0"] = 7, ["1"] = 7, ["2"] = 7, ["3"] = 7, ["4"] = 7, ["5"] = 7,
+            ["6"] = 7, ["7"] = 7, ["8"] = 7, ["9"] = 7
+        },
+        GRADIENT_BLACK = {
+            ["0"] = 7, ["1"] = 7, ["2"] = 7, ["3"] = 7, ["4"] = 7, ["5"] = 7,
+            ["6"] = 7, ["7"] = 7, ["8"] = 7, ["9"] = 7
+        },
+        GRADIENT_TALL_BLACK = {
+            ["0"] = 7, ["1"] = 7, ["2"] = 7, ["3"] = 7, ["4"] = 7, ["5"] = 7,
+            ["6"] = 7, ["7"] = 7, ["8"] = 7, ["9"] = 7
+        },
+        GRADIENT_GREEN_BLACK = {
+            ["0"] = 7, ["1"] = 7, ["2"] = 7, ["3"] = 7, ["4"] = 7, ["5"] = 7,
+            ["6"] = 7, ["7"] = 7, ["8"] = 7, ["9"] = 7
+        },
+        GRADIENT_ORANGE_BLACK = {
+            ["0"] = 7, ["1"] = 7, ["2"] = 7, ["3"] = 7, ["4"] = 7, ["5"] = 7,
+            ["6"] = 7, ["7"] = 7, ["8"] = 7, ["9"] = 7, ["+"] = 7
+        },
+        BATTLE_BLACK = {
+            ["0"] = 7, ["1"] = 7, ["2"] = 7, ["3"] = 7, ["4"] = 7, ["5"] = 7,
+            ["6"] = 7, ["7"] = 7, ["8"] = 7, ["9"] = 7, [" "] = 7,
+            ["A"] = 7, ["B"] = 7, ["C"] = 7, ["D"] = 7, ["E"] = 7, ["F"] = 7,
+            ["G"] = 7, ["H"] = 7, ["I"] = 7, ["J"] = 7, ["K"] = 7, ["L"] = 7,
+            ["M"] = 7, ["N"] = 7, ["O"] = 7, ["P"] = 7, ["Q"] = 7, ["R"] = 7,
+            ["S"] = 7, ["T"] = 7, ["U"] = 7, ["V"] = 7, ["W"] = 7, ["X"] = 7,
+            ["Y"] = 7, ["Z"] = 7, ["!"] = 7, ["_"] = 7, ["<"] = 7, [">"] = 7
+        },
+        THIN_BLACK = {
+            ["A"] = 7, ["B"] = 7, ["C"] = 7, ["D"] = 7, ["E"] = 7, ["F"] = 7,
+            ["G"] = 7, ["H"] = 7, ["I"] = 7, ["J"] = 7, ["K"] = 7, ["L"] = 7,
+            ["M"] = 7, ["N"] = 7, ["O"] = 7, ["P"] = 7, ["Q"] = 7, ["R"] = 7,
+            ["S"] = 7, ["T"] = 7, ["U"] = 7, ["V"] = 7, ["W"] = 7, ["X"] = 7,
+            ["Y"] = 7, ["Z"] = 7, [":"] = 5, ["&"] = 7, ["'"] = 6, ["="] = 7,
+            ["0"] = 7, ["1"] = 7, ["2"] = 7, ["3"] = 7, ["4"] = 7, ["5"] = 7,
+            ["6"] = 7, ["7"] = 7, ["8"] = 7, ["9"] = 7, ["a"] = 7, ["b"] = 7,
+            ["c"] = 7, ["d"] = 7, ["e"] = 7, ["f"] = 6, ["g"] = 7, ["h"] = 7,
+            ["i"] = 4, ["j"] = 7, ["k"] = 7, ["l"] = 4, ["m"] = 7, ["n"] = 7,
+            ["o"] = 7, ["p"] = 7, ["q"] = 7, ["r"] = 6, ["s"] = 7, ["t"] = 7,
+            ["u"] = 7, ["v"] = 7, ["w"] = 7, ["x"] = 7, ["y"] = 7, ["z"] = 7,
+            ["-"] = 7, ["!"] = 4, ["/"] = 7, ["."] = 5, ["?"] = 7, [","] = 5,
+            ['"'] = 7, ["_"] = 7, ["$"] = 7, ["("] = 7, [")"] = 7, ["["] = 7,
+            ["]"] = 7, ["*"] = 7, ["~"] = 7, ["`"] = 7, ["^"] = 7, ["+"] = 7,
+            ["#"] = 7, ["%"] = 7, ["@"] = 7, ["<"] = 7, [">"] = 7, ["{"] = 7,
+            ["}"] = 7, [";"] = 5
+            },
+        TINY_BLACK = {
+            ["A"] = 5, ["B"] = 5, ["C"] = 5, ["D"] = 5, ["E"] = 5, ["F"] = 5,
+            ["G"] = 5, ["H"] = 5, ["I"] = 5, ["J"] = 5, ["K"] = 5, ["L"] = 5,
+            ["M"] = 5, ["N"] = 5, ["O"] = 5, ["P"] = 5, ["Q"] = 5, ["R"] = 5,
+            ["S"] = 5, ["T"] = 5, ["U"] = 5, ["V"] = 5, ["W"] = 5, ["X"] = 5,
+            ["Y"] = 5, ["Z"] = 5, ["a"] = 5, ["b"] = 5, ["c"] = 5, ["d"] = 5,
+            ["e"] = 5, ["f"] = 5, ["g"] = 5, ["h"] = 5, ["i"] = 5, ["j"] = 5,
+            ["k"] = 5, ["l"] = 5, ["m"] = 5, ["n"] = 5, ["o"] = 5, ["p"] = 5,
+            ["q"] = 5, ["r"] = 5, ["s"] = 5, ["t"] = 5, ["u"] = 5, ["v"] = 5,
+            ["w"] = 5, ["x"] = 5, ["y"] = 5, ["z"] = 5, ["0"] = 5, ["1"] = 5,
+            ["2"] = 5, ["3"] = 5, ["4"] = 5, ["5"] = 5, ["6"] = 5, ["7"] = 5,
+            ["8"] = 5, ["9"] = 5, ["("] = 5, [")"] = 5, ["_"] = 5, ["-"] = 5,
+            ["+"] = 5, ["="] = 5, ["\\"] = 5, ["/"] = 5, ["<"] = 5, [">"] = 5,
+            ["?"] = 5, [","] = 5, ["."] = 5, ["!"] = 5, ["@"] = 5, ["#"] = 5,
+            ["$"] = 5, ["%"] = 5, ["^"] = 5, ["&"] = 5, ["*"] = 5, ["'"] = 5,
+            ['"'] = 5, [":"] = 5, [";"] = 5
+        },
+        WIDE_BLACK = {
             ["A"] = 7, ["B"] = 6, ["C"] = 6, ["D"] = 6, ["E"] = 6, ["F"] = 6,
             ["G"] = 6, ["H"] = 6, ["I"] = 6, ["J"] = 6, ["K"] = 6, ["L"] = 6,
             ["M"] = 6, ["N"] = 6, ["O"] = 6, ["P"] = 6, ["Q"] = 7, ["R"] = 6,
