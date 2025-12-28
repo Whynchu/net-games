@@ -171,6 +171,142 @@ Net:on("player_join", function(event)
     
 end)
 
+--=====================================================
+-- Frozen player support (used by Simon Says + other games)
+--=====================================================
+
+local frozen_players = frozen_players or {}
+
+-- Try a handful of possible EO/Net APIs to move a player without hard-crashing
+local function try_move_player(player_id, area_id, x, y, z)
+  -- 1) transfer_player(player_id, area_id, x, y, z)
+  local ok = pcall(function()
+    if Net.transfer_player then
+      Net.transfer_player(player_id, area_id, x, y, z)
+    end
+  end)
+  if ok and Net.transfer_player then return true end
+
+  -- 2) transfer_player(player_id, area_id, warp_in, x, y, z) (some forks use warp_in bool)
+  ok = pcall(function()
+    if Net.transfer_player then
+      Net.transfer_player(player_id, area_id, false, x, y, z)
+    end
+  end)
+  if ok and Net.transfer_player then return true end
+
+  -- 3) move_player(player_id, x, y, z)
+  ok = pcall(function()
+    if Net.move_player then
+      Net.move_player(player_id, x, y, z)
+    end
+  end)
+  if ok and Net.move_player then return true end
+
+  -- 4) set_player_position(player_id, x, y, z)
+  ok = pcall(function()
+    if Net.set_player_position then
+      Net.set_player_position(player_id, x, y, z)
+    end
+  end)
+  if ok and Net.set_player_position then return true end
+
+  return false
+end
+
+-- Try common APIs to animate the player
+local function try_animate_player(player_id, anim_state)
+  -- 1) animate_player_properties(player_id, keyframes)
+  local ok = pcall(function()
+    if Net.animate_player_properties then
+      local keyframes = {
+        { properties = { { property = "Animation", value = anim_state } }, duration = 0 }
+      }
+      Net.animate_player_properties(player_id, keyframes)
+    end
+  end)
+  if ok and Net.animate_player_properties then return true end
+
+  -- 2) set_player_animation(player_id, anim_state)
+  ok = pcall(function()
+    if Net.set_player_animation then
+      Net.set_player_animation(player_id, anim_state)
+    end
+  end)
+  if ok and Net.set_player_animation then return true end
+
+  return false
+end
+
+-- Optional: resolve a "Stasis" point. We support either:
+--  - a Tiled object named "Stasis"
+--  - OR just do nothing (lock-only) if not found
+local function find_stasis(area_id)
+  local ok, obj = pcall(function()
+    return Net.get_object_by_name(area_id, "Stasis")
+  end)
+  if ok and obj and obj.x and obj.y then
+    return obj.x, obj.y, (obj.z or 0)
+  end
+  return nil
+end
+
+-- Freeze = lock input + optionally move to stasis (so the player can’t walk away)
+function frame.freeze_player(player_id)
+  if frozen_players[player_id] then return end
+
+  local area_id = Net.get_player_area(player_id)
+  local pos = Net.get_player_position(player_id)
+
+  frozen_players[player_id] = {
+    area_id = area_id,
+    x = pos.x, y = pos.y, z = pos.z
+  }
+
+  -- This is the important part for "virtual_input" based minigames
+  Net.lock_player_input(player_id)
+
+  -- If you have a Stasis object, park them there while frozen
+  local sx, sy, sz = find_stasis(area_id)
+  if sx and sy then
+    try_move_player(player_id, area_id, sx, sy, sz)
+  end
+end
+
+-- Unfreeze = restore position + unlock input
+function frame.unfreeze_player(player_id)
+  local data = frozen_players[player_id]
+  if not data then
+    -- still ensure input is freed if someone got desynced
+    if Net.unlock_player_input then Net.unlock_player_input(player_id) end
+    return
+  end
+
+  -- restore where they were when freeze_player happened
+  try_move_player(player_id, data.area_id, data.x, data.y, data.z)
+
+  frozen_players[player_id] = nil
+  Net.unlock_player_input(player_id)
+end
+
+-- Move the frozen player (Simon Says uses this after fading to black)
+function frame.move_frozen_player(player_id, x, y, z)
+  return async(function()
+    local area_id = Net.get_player_area(player_id)
+    try_move_player(player_id, area_id, x, y, z)
+    await(Async.sleep(0)) -- yields nicely for callers doing await(...)
+  end)
+end
+
+-- Animate the frozen player
+function frame.animate_frozen_player(player_id, anim_state)
+  return async(function()
+    try_animate_player(player_id, anim_state)
+    await(Async.sleep(0))
+  end)
+end
+
+
 
 -- PLAYER FUNCTIONS
 -- Functons used to interact with the player and the framework 
@@ -773,8 +909,24 @@ Net:on("virtual_input", function(event)
                 Net:emit("cursor_move", {player_id = event.player_id, cursor = cursor["name"], selection = cursor["current"], button = button.name})
             --if A button emit selection
             elseif (button.name == "Interact" or button.name == "Confirm") and button.state==1 then
-                Net:emit("cursor_selection", {player_id = event.player_id,cursor = cursor["name"],selection = cursor_cache[event.player_id]["selections"][cursor["current"]]["name"]})
+                -- Some systems set cursor_cache without selections (or clear selections during transitions).
+                -- Guard so dialogue/other virtual_input users can't crash menu selection logic.
+                local cc = cursor_cache[event.player_id]
+                local selections = cc and cc.selections
+                local idx = cc and cc.current
+
+                if selections and idx and selections[idx] and selections[idx].name then
+                    Net:emit("cursor_selection", {
+                        player_id = event.player_id,
+                        cursor = cc.name,
+                        selection = selections[idx].name
+                    })
+                else
+                    -- Optional debug (leave off if you don't want spam)
+                    -- print("[framework] cursor_selection ignored (missing selections/current)")
+                end
             end
+
         end
     end
 end)
