@@ -4,6 +4,12 @@ print("[net-games dialogue/startup] LOADING...")
 local Displayer = require("scripts/net-games/displayer/displayer")
 local Input     = require("scripts/net-games/input/input")
 
+-- force-load net-games UI systems early
+require("scripts/net-games/displayer/displayer")
+require("scripts/net-games/displayer/font-system")
+require("scripts/net-games/displayer/text-display")
+
+
 assert(Displayer:init() and Displayer:isValid(), "[net-games dialogue/startup] Displayer failed to init")
 Input.attach_virtual_input_listener()
 
