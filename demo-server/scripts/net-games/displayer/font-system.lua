@@ -297,6 +297,25 @@ function FontSystem:init()
             [";"] = 6
         }
     }
+
+    --=====================================================
+    -- Alias *_BLACK width tables to their non-black equivalents
+    -- This keeps glyph support checks (lowercase, punctuation, etc.)
+    -- consistent across light/dark textures.
+    --=====================================================
+    local function alias_widths(black_name)
+        local base = black_name:gsub("_BLACK$", "")
+        if self.char_widths[base] and not self.char_widths[black_name] then
+            self.char_widths[black_name] = self.char_widths[base]
+        end
+    end
+
+    for font_name, _ in pairs(self.font_sprites) do
+        if font_name:match("_BLACK$") then
+            alias_widths(font_name)
+        end
+    end
+
     
     self.player_fonts = {}
     
@@ -319,9 +338,9 @@ function FontSystem:setupPlayerFonts(player_id)
     
     -- Provide assets and allocate sprites for each font type
     for font_name, sprite_data in pairs(self.font_sprites) do
-        --Net.provide_asset_for_player(player_id, sprite_data.texture_path)
+        Net.provide_asset_for_player(player_id, sprite_data.texture_path)
         if sprite_data.anim_path then
-            --Net.provide_asset_for_player(player_id, sprite_data.anim_path)
+            Net.provide_asset_for_player(player_id, sprite_data.anim_path)
         end
         
         Net.player_alloc_sprite(player_id, font_name, sprite_data)
@@ -338,12 +357,21 @@ function FontSystem:cleanupPlayerFonts(player_id)
         
         -- Deallocate all font sprites
         for font_name, _ in pairs(self.font_sprites) do
-            --Net.player_dealloc_sprite(player_id, font_name)
+            Net.player_dealloc_sprite(player_id, font_name)
         end
         
         self.player_fonts[player_id] = nil
     end
 end
+
+-- Returns the animation prefix for a font.
+-- Dark fonts reuse the SAME animation state names as their base font.
+-- Example: THICK_BLACK uses THICK_* states (but draws with THICK_BLACK texture).
+local function anim_prefix_for_font(font_name)
+    -- strip ONLY a trailing "_BLACK"
+    return (font_name and font_name:gsub("_BLACK$", "")) or font_name
+end
+
 
 -- Table with each letter of the alphabet as separate strings
 local alphabet = {
@@ -411,7 +439,7 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
                     z = z_order,
                     sx = scale,
                     sy = scale,
-                    anim_state = font_name .. "_LOWER_" .. char
+                    anim_state = anim_prefix_for_font(font_name) .. "_LOWER_" .. char:upper()
                 }
             )
         else
@@ -425,7 +453,7 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
                     z = z_order,
                     sx = scale,
                     sy = scale,
-                    anim_state = font_name .. "_" .. char
+                    anim_state = anim_prefix_for_font(font_name) .. "_" .. char
                 }
             )
         end 
@@ -496,7 +524,7 @@ function FontSystem:drawText(player_id, text_id, text, x, y, z_order, font_name,
                     z = z_order,
                     sx = scale,
                     sy = scale,
-                    anim_state = font_name .. "_LOWER_" .. char
+                    anim_state = font_name .. "_LOWER_" .. char .. char:upper()
                 }
             )
         else
@@ -510,7 +538,7 @@ function FontSystem:drawText(player_id, text_id, text, x, y, z_order, font_name,
                     z = z_order,
                     sx = scale,
                     sy = scale,
-                    anim_state = font_name .. "_" .. char
+                    anim_state = font_name .. "_" .. char .. "_" .. char
                 }
             )
         end 

@@ -8,6 +8,18 @@
 
 --the below line is required to access net-games functions
 local games = require("scripts/net-games/framework")
+local NetHelpers = require("scripts/net-games/helpers/net-helpers")
+NetHelpers.patch_net()
+
+NetHelpers.safe_require("scripts/net-games/dialogue/startup")
+
+-------------------------------------------
+-- DEMO CODE FOR NPC THAT LITTERALLY JUST TALK (WOW) --
+-------------------------------------------
+
+require("scripts/net-games/npcs/prog_banner_dialogue")
+require("scripts/net-games/npcs/prog_basic_dialogue")
+require("scripts/net-games/npcs/prog_dramatic_dialogue")
 
 -------------------------------------------
 -- DEMO CODE FOR NPC THAT GIVES COSMETIC --
