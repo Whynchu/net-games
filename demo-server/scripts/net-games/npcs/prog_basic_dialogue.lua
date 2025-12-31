@@ -64,7 +64,7 @@ Net:on("actor_interaction", function(event)
     -- modular control 
 ui = {
   box_id = "prog_dialogue_box",
-  font = "THICK_BLACK",
+  font = "THIN_BLACK",
   scale = 2.0,
   z = 100,
   typing_speed = 30,
@@ -80,7 +80,7 @@ ui = {
     width = 478,
     height = 104,
     padding_x = 16,
-    padding_y = 16,
+    padding_y = 4,
     max_lines = 3,
 
     indicator = {

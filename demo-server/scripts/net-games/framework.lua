@@ -168,7 +168,8 @@ Net:on("player_join", function(event)
     Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_thin.animation")
     Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_tiny.animation")
     Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_compressed.animation")
-    
+    Net.provide_asset_for_player(event.player_id, "/server/assets/net-games/fonts_dark_compressed.png")
+
 end)
 
 --=====================================================

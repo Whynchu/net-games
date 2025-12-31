@@ -3,108 +3,39 @@ FontSystem = {}
 FontSystem.__index = FontSystem
 
 function FontSystem:init()
+    local COMP_TEX  = "/server/assets/net-games/fonts_compressed.png"
+    local COMP_ANIM = "/server/assets/net-games/fonts_compressed.animation"
+    local DARK_TEX  = "/server/assets/net-games/fonts_dark_compressed.png"
+    local DARK_ANIM = "/server/assets/net-games/fonts_dark_compressed.animation"
+
     self.font_sprites = {
-        THICK = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png",
-            anim_path = "/server/assets/net-games/fonts_thick.animation",
-            anim_state = "THICK_0" -- Default state
-        },
-        GRADIENT = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_0"
-        },
-        GRADIENT_GOLD = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_GOLD_0"
-        },
-        GRADIENT_ORANGE = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_ORANGE_0"
-        },
-        GRADIENT_GREEN = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_GREEN_0"
-        },
-        GRADIENT_TALL = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_TALL_0"
-        },
-        THIN = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_thin.animation",
-            anim_state = "THIN_0"
-        },
-        WIDE = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_wide.animation",
-            anim_state = "WIDE_0"
-        },
-        TINY = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_tiny.animation",
-            anim_state = "TINY_0"
-        },
-        BATTLE = {
-            texture_path = "/server/assets/net-games/fonts_compressed.png",
-            anim_path = "/server/assets/net-games/fonts_battle.animation", 
-            anim_state = "BATTLE_0"
-        },
-        THICK_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png",
-            anim_path = "/server/assets/net-games/fonts_thick.animation",
-            anim_state = "THICK_0" -- Default state
-        },
-        GRADIENT_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_0"
-        },
-        GRADIENT_GOLD_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_GOLD_0"
-        },
-        GRADIENT_ORANGE_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_ORANGE_0"
-        },
-        GRADIENT_GREEN_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_GREEN_0"
-        },
-        GRADIENT_TALL_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_gradient.animation",
-            anim_state = "GRADIENT_TALL_0"
-        },
-        THIN_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_thin.animation",
-            anim_state = "THIN_0"
-        },
-        WIDE_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_wide.animation",
-            anim_state = "WIDE_0"
-        },
-        TINY_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png", 
-            anim_path = "/server/assets/net-games/fonts_tiny.animation",
-            anim_state = "TINY_0"
-        },
-        BATTLE_BLACK = {
-            texture_path = "/server/assets/net-games/fonts_dark_compressed.png",
-            anim_path = "/server/assets/net-games/fonts_battle.animation", 
-            anim_state = "BATTLE_0"
-        }
+        -- Light
+        THICK = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "THICK_0" },
+        THIN  = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "THIN_0" },
+        WIDE  = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "WIDE_0" },
+        TINY  = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "TINY_0" },
+        BATTLE= { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "BATTLE_0" },
+
+        GRADIENT        = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "GRADIENT_0" },
+        GRADIENT_GOLD   = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "GRADIENT_GOLD_0" },
+        GRADIENT_ORANGE = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "GRADIENT_ORANGE_0" },
+        GRADIENT_GREEN  = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "GRADIENT_GREEN_0" },
+        GRADIENT_TALL   = { texture_path = COMP_TEX, anim_path = COMP_ANIM, anim_state = "GRADIENT_TALL_0" },
+
+        -- Dark
+        THICK_BLACK = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "THICK_0" },
+        THIN_BLACK  = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "THIN_0" },
+        WIDE_BLACK  = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "WIDE_0" },
+        TINY_BLACK  = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "TINY_0" },
+        BATTLE_BLACK= { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "BATTLE_0" },
+
+        GRADIENT_BLACK        = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "GRADIENT_0" },
+        GRADIENT_GOLD_BLACK   = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "GRADIENT_GOLD_0" },
+        GRADIENT_ORANGE_BLACK = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "GRADIENT_ORANGE_0" },
+        GRADIENT_GREEN_BLACK  = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "GRADIENT_GREEN_0" },
+        GRADIENT_TALL_BLACK   = { texture_path = DARK_TEX, anim_path = DARK_ANIM, anim_state = "GRADIENT_TALL_0" },
     }
+
     
     -- Character width data for consistent spacing - FIXED: Now includes all common characters
     self.char_widths = {
@@ -480,81 +411,63 @@ function FontSystem:drawText(player_id, text_id, text, x, y, z_order, font_name,
     font_name = font_name or "THICK"
     scale = tonumber(scale) or 2.0
     z_order = z_order or 100
-    
+
     local player_data = self.player_fonts[player_id]
     if not player_data then return nil end
-    
-    local display_id = text_id or "text_" .. player_data.next_obj_id
+
+    local display_id = text_id or ("text_" .. player_data.next_obj_id)
     player_data.next_obj_id = player_data.next_obj_id + 1
-    
+
     local display_data = {
         font = font_name,
-        x = x,
-        y = y,
+        x = x, y = y,
         scale = scale,
         z_order = z_order,
         character_objects = {},
         text = text
     }
-    
+
     local current_x = x
     local char_widths = self.char_widths[font_name] or self.char_widths.THICK
-    -- FIXED: Calculate spacing that scales properly to preserve monospace
-    local base_spacing = 1  -- Base spacing at scale 1.0
+    local base_spacing = 1
     local scaled_spacing = base_spacing * scale
+
     for i = 1, #text do
         local char = text:sub(i, i)
-        -- Use a default width if character not found
 
         if font_name == "BATTLE" or font_name == "WIDE" then
             char = char:upper()
-        end 
+        end
+
         local char_width = char_widths[char] or char_widths["A"] or 6
         local scaled_width = char_width * scale
-        
-        local obj_id = display_id .. "_" .. i
-        if char == char:lower() and isInAlphabet(char) then 
-            Net.player_draw_sprite(
-                player_id,
-                font_name,
-                {
-                    id = obj_id,
-                    x = current_x,
-                    y = y,
-                    z = z_order,
-                    sx = scale,
-                    sy = scale,
-                    anim_state = font_name .. "_LOWER_" .. char .. char:upper()
-                }
-            )
+
+        -- safer IDs to reduce collisions with other text systems
+        local obj_id = display_id .. "_char_" .. (10000 + i)
+
+        local prefix = anim_prefix_for_font(font_name)
+        local state
+        if char == char:lower() and isInAlphabet(char) then
+            state = prefix .. "_LOWER_" .. char:upper()
         else
-            Net.player_draw_sprite(
-                player_id,
-                font_name,
-                {
-                    id = obj_id,
-                    x = current_x,
-                    y = y,
-                    z = z_order,
-                    sx = scale,
-                    sy = scale,
-                    anim_state = font_name .. "_" .. char .. "_" .. char
-                }
-            )
-        end 
-        
-        table.insert(display_data.character_objects, {
-            obj_id = obj_id,
-            width = scaled_width
+            state = prefix .. "_" .. char
+        end
+
+        Net.player_draw_sprite(player_id, font_name, {
+            id = obj_id,
+            x = current_x, y = y, z = z_order,
+            sx = scale, sy = scale,
+            anim_state = state
         })
-        
-        -- FIXED: Use scaled spacing to preserve monospace at different scales
+
+        table.insert(display_data.character_objects, { obj_id = obj_id, width = scaled_width })
         current_x = current_x + scaled_width + scaled_spacing
     end
-    
+
     player_data.active_displays[display_id] = display_data
     return display_id
 end
+
 
 function FontSystem:eraseTextDisplay(player_id, display_id)
     local player_data = self.player_fonts[player_id]
