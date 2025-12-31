@@ -570,21 +570,112 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
           oy = tonumber(box_data.backdrop.render_offset_y) or 0
         end
 
-        Net.player_draw_sprite(player_id, sprite_id, {
-            id = backdrop_id,
-            x = box_data.x + ox,
-            y = box_data.y + oy,
-            z = z,
-            sx = s,
-            sy = s,
-            anim_state = "OPEN",
-        })
+        local draw = {
+          id = backdrop_id,
+          x  = box_data.x + ox,
+          y  = box_data.y + oy,
+          z  = z,
+          sx = s,
+          sy = s,
+          anim_state = "OPEN",
+        }
+
+        -- APPLY OPTIONAL TINT (this is the "tint hook")
+        local tint = box_data.backdrop
+        if tint then
+          draw.r = tint.r or 255
+          draw.g = tint.g or 255
+          draw.b = tint.b or 255
+          draw.a = tint.a or tint.opacity or 255
+          draw.color_mode = tint.color_mode or tint.mode
+        end
+
+        Net.player_draw_sprite(player_id, sprite_id, draw)
+
 
 
         box_data.backdrop_id = backdrop_id
         return
     end
 
+    if style == "textbox_panel_frame_tint" then
+      -- 1) draw normal textbox panel first (UNCHANGED UI)
+      local base_sprite_id = 5201
+      local base_tex  = "/server/assets/net-games/displayer/textbox.png"
+      local base_anim = "/server/assets/net-games/displayer/textbox.animation"
+
+      player_data.backdrop_allocated = player_data.backdrop_allocated or {}
+
+      if not player_data.backdrop_allocated.textbox_panel then
+        Net.provide_asset_for_player(player_id, base_tex)
+        Net.provide_asset_for_player(player_id, base_anim)
+        Net.player_alloc_sprite(player_id, base_sprite_id, {
+          texture_path = base_tex,
+          anim_path = base_anim,
+          anim_state = "OPEN",
+        })
+        player_data.backdrop_allocated.textbox_panel = true
+      end
+
+      local s = box_data.scale or 2.0
+      local z = (box_data.z_order or 100) - 1
+
+      local ox, oy = 0, 0
+      if box_data.backdrop then
+        ox = tonumber(box_data.backdrop.render_offset_x) or 0
+        oy = tonumber(box_data.backdrop.render_offset_y) or 0
+      end
+
+      local x = box_data.x + ox
+      local y = box_data.y + oy
+
+      local base_id = box_id .. "_backdrop"
+      Net.player_draw_sprite(player_id, base_sprite_id, {
+        id = base_id,
+        x = x, y = y,
+        z = z,
+        sx = s, sy = s,
+        anim_state = "OPEN",
+      })
+
+      -- 2) draw tinted frame overlay on top
+      local frame_sprite_id = 5202
+      local frame_tex = "/server/assets/net-games/displayer/textbox_frame_gray.png"
+
+      if not player_data.backdrop_allocated.textbox_frame_gray then
+        Net.provide_asset_for_player(player_id, frame_tex)
+        -- reuse same anim file so frames match perfectly
+        Net.provide_asset_for_player(player_id, base_anim)
+        Net.player_alloc_sprite(player_id, frame_sprite_id, {
+          texture_path = frame_tex,
+          anim_path = base_anim,
+          anim_state = "OPEN",
+        })
+        player_data.backdrop_allocated.textbox_frame_gray = true
+      end
+
+      local tint = box_data.backdrop or {}
+      local frame_id = box_id .. "_frame"
+
+      Net.player_draw_sprite(player_id, frame_sprite_id, {
+        id = frame_id,
+        x = x, y = y,
+        z = z + 0.01, -- just above base
+        sx = s, sy = s,
+        anim_state = "OPEN",
+
+        -- tint only the frame sprite
+        r = tint.r or 80,
+        g = tint.g or 255,
+        b = tint.b or 80,
+        a = tint.a or 255,
+        color_mode = tint.color_mode or 2,
+      })
+
+      box_data.backdrop_id = base_id
+      box_data.frame_id = frame_id
+      return
+    end
 
     -- If no configured backdrop texture, do nothing.
     if not self.backdrop_sprite or not self.backdrop_sprite.texture_path then
@@ -1234,6 +1325,11 @@ function TextDisplay:removeTextBox(player_id, box_id)
     if box_data.mug_id then
         Net.player_erase_sprite(player_id, box_data.mug_id)
         box_data.mug_id = nil
+    end
+
+    if box_data.frame_id then
+        Net.player_erase_sprite(player_id, box_data.frame_id)
+        box_data.frame_id = nil
     end
 
 
