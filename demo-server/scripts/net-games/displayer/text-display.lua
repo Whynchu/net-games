@@ -1029,11 +1029,19 @@ end
 -- Text box ticking
 --=====================================================
 function TextDisplay:updateTextBoxCursor(player_id, box_id, box_data, delta)
-    -- Show cursor only when the box is waiting AND confirm is meaningful
+    
+local indicator_enabled = true
+if box_data.backdrop and box_data.backdrop.indicator then
+  indicator_enabled = (box_data.backdrop.indicator.enabled ~= false)
+end
+
+
+-- Show cursor only when the box is waiting AND confirm is meaningful
     local mode = box_data.page_advance or "auto_advance"
-    local should_show =
-        (box_data.state == "waiting") and
-        (mode == "wait_for_confirm" or mode == "auto_advance_or_confirm")
+local should_show =
+    indicator_enabled and
+    (box_data.state == "waiting") and
+    (mode == "wait_for_confirm" or mode == "auto_advance_or_confirm")
 
     local cursor_id = box_id .. "_cursor"
 

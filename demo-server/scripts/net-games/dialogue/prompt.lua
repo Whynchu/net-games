@@ -1,5 +1,5 @@
 -- scripts/net-games/dialogue/prompt.lua
--- YES/NO prompt helper for net-games Dialogue
+-- YES/NO prompt helper for net-games Dialogue (fixed + clean)
 
 local Displayer  = require("scripts/net-games/displayer/displayer")
 local Input      = require("scripts/net-games/input/input")
@@ -50,7 +50,6 @@ end
 --========================
 -- Selector cursor drawing
 --========================
-
 local function ensure_selector_cursor_allocated(player_id)
   Net.provide_asset_for_player(player_id, "/server/assets/net-games/text_cursor.png")
   Net.provide_asset_for_player(player_id, "/server/assets/net-games/text_cursor.animation")
@@ -83,7 +82,6 @@ end
 --========================
 -- UI normalize (padding)
 --========================
-
 local function normalize_ui(ui)
   local o = {
     box_id = ui.box_id,
@@ -117,30 +115,67 @@ local function normalize_ui(ui)
 end
 
 --========================
--- Text + positioning
+-- Text building (auto paginate, reserve options line)
 --========================
+local OPTIONS_INDENT = "       " -- 7 spaces
 
-local OPTIONS_INDENT = "       "  -- 7 spaces (tweak this)
-
-local function build_yesno_text(question)
-  return tostring(question or "Continue?") .. "\n" .. OPTIONS_INDENT .. "Yes    No"
+local function join_lines(lines)
+  return table.concat(lines, "\n")
 end
 
+local function build_yesno_text_from_wrapped(question_lines, max_lines_per_page)
+  max_lines_per_page = math.max(2, tonumber(max_lines_per_page or 3) or 3)
 
-local function compute_left_indent(ui)
-  local mug = ui.mugshot
-  if not mug or not mug.enabled then return 0 end
-  local reserve_w = (mug.reserve_w or 0)
-  local gap = (mug.gap_px or 0)
-  return (reserve_w + gap) * ui.scale
+  local pages = {}
+  local chunk = {}
+  local room = max_lines_per_page - 1 -- reserve last line for options
+
+  for i = 1, #question_lines do
+    table.insert(chunk, question_lines[i])
+
+    -- Only flush a question-only page if there are MORE lines to place.
+    -- If this is the final chunk (even if it exactly fills 'room'), keep it
+    -- so it can share the page with Yes/No.
+    if #chunk >= room and i < #question_lines then
+      table.insert(pages, join_lines(chunk))
+      chunk = {}
+    end
+  end
+
+  local final_lines = {}
+  for i = 1, #chunk do
+    table.insert(final_lines, chunk[i])
+  end
+  table.insert(final_lines, OPTIONS_INDENT .. "Yes    No")
+  table.insert(pages, join_lines(final_lines))
+
+  -- formfeed => new page
+  return table.concat(pages, "\f")
 end
 
+local function options_visible_on_current_page(player_id, box_id)
+  local bd = Displayer.Text.getTextBoxData(player_id, box_id)
+  if not bd or not bd.pages then return false end
 
+  local p = bd.current_page or 1
+  local page = bd.pages[p]
+  if not page then return false end
 
+  for i = 1, #page do
+    if tostring(page[i] or ""):find("Yes") then
+      return true
+    end
+  end
+
+  return false
+end
+
+--========================
+-- Cursor placement
+--========================
 local function yesno_cursor_pos(player_id, box_id, ui_norm, selection)
   local bd = Displayer.Text.getTextBoxData(player_id, box_id)
   if not bd then
-    -- emergency fallback (what you set manually)
     return 20, 120
   end
 
@@ -148,64 +183,49 @@ local function yesno_cursor_pos(player_id, box_id, ui_norm, selection)
   local font   = bd.font  or ui_norm.font  or "THIN_BLACK"
   local line_h = bd._line_height_px or (12 * scale)
 
--- Find the actual rendered line that contains our options text
-local options_line = 2
-if bd.pages and bd.pages[1] then
-  local lines = bd.pages[1]
-  for i = 1, #lines do
-    local s = tostring(lines[i] or "")
-    if s:find("Yes") then
-      options_line = i
-      break
+  local options_line = 2
+  local curp = bd.current_page or 1
+
+  if bd.pages and bd.pages[curp] then
+    local lines = bd.pages[curp]
+    for i = 1, #lines do
+      local s = tostring(lines[i] or "")
+      if s:find("Yes") then
+        options_line = i
+        break
+      end
     end
   end
-  if options_line < 2 then options_line = 2 end
-  if options_line > 3 then options_line = 3 end
-end
 
-
-  -- Start at the textbox's true inner origin
   local base_x = bd.inner_x or ((bd.x or 0) + (bd.padding_x or 0))
   local base_y = bd.inner_y or ((bd.y or 0) + (bd.padding_y or 0))
 
-  -- Apply mugshot indent for that specific line, if present
   if bd.line_x_offsets and bd.line_x_offsets[options_line] then
     base_x = base_x + bd.line_x_offsets[options_line]
   end
 
   local options_y = base_y + ((options_line - 1) * line_h)
 
-  -- Text we print is: "\n  Yes      No"
-local yes_prefix = OPTIONS_INDENT
-local no_prefix  = OPTIONS_INDENT .. "Yes    "
+  local yes_prefix = OPTIONS_INDENT
+  local no_prefix  = OPTIONS_INDENT .. "Yes    "
 
   local yes_x = base_x + FontSystem:getTextWidth(yes_prefix, font, scale)
   local no_x  = base_x + FontSystem:getTextWidth(no_prefix,  font, scale)
 
--- Cursor visual tuning:
--- We want the *triangle tip* just left of the word.
--- Treat cursor origin as "top-left of frame" and use a fixed offset instead of cursor_w math.
-local cursor_h = 13 * scale
+  local cursor_h = 13 * scale
+  local left_of_word = 6 * scale
+  local down_in_line = 9 * scale
 
--- How far left of the word start the cursor should sit (tune this)
-local left_of_word = 6 * scale
+  local target_x = (selection == 1) and yes_x or no_x
+  local cx = target_x - left_of_word
+  local cy = options_y + down_in_line + ((line_h - cursor_h) * 0.5)
 
--- How far down from the line top to visually match the font baseline (tune this)
-local down_in_line = 9 * scale
-
-local target_x = (selection == 1) and yes_x or no_x
-
-local cx = target_x - left_of_word
-local cy = options_y + down_in_line + ((line_h - cursor_h) * 0.5)
-
-return cx, cy
-
+  return cx, cy
 end
 
 --========================
 -- Instance
 --========================
-
 local PromptInstance = {}
 PromptInstance.__index = PromptInstance
 
@@ -216,14 +236,12 @@ function PromptInstance:new(player_id, opts)
   o.box_id = (opts and opts.ui and opts.ui.box_id) or mk_id(player_id)
 
   o.ui = normalize_ui((opts and opts.ui) or {})
-  o.question  = (opts and opts.question) or "Check out my themes?"
+  o.question  = (opts and opts.question) or "Continue?"
   o.on_yes    = (opts and opts.on_yes) or function() end
   o.on_no     = (opts and opts.on_no) or function() end
   o.on_cancel = (opts and opts.on_cancel) or function() end
+
   o.ready_for_input = false
-  o.cursor_visible = false
-
-
   o.selection = 1
   o.cursor_id = o.box_id .. "_selcursor"
 
@@ -233,12 +251,14 @@ end
 
 function PromptInstance:render_initial()
   local ui = self.ui
-  local text = build_yesno_text(self.question)
+  local player_id = self.player_id
 
-  Displayer.Text.removeTextBox(self.player_id, self.box_id)
+  -- PASS 1: render question-only to let TextDisplay wrap for this geometry
+  local question_only = tostring(self.question or "Continue?")
 
-  -- We do NOT want the textbox "next" indicator here; prompt has its own selector cursor.
-  local ops = {
+  Displayer.Text.removeTextBox(player_id, self.box_id)
+
+  local tmp_ops = {
     page_advance = "auto_advance",
     auto_advance_seconds = 999999,
     confirm_during_typing = false,
@@ -250,24 +270,68 @@ function PromptInstance:render_initial()
 
   if Displayer.Text.create_text_box then
     Displayer.Text.create_text_box(
-      self.player_id, self.box_id, text,
+      player_id, self.box_id, question_only,
+      ui.x, ui.y, ui.w, ui.h,
+      ui.font, ui.scale, ui.z,
+      ui.backdrop,
+      ui.typing_speed,
+      tmp_ops
+    )
+  else
+    Displayer.Text.createTextBox(
+      player_id, self.box_id, question_only,
+      ui.x, ui.y, ui.w, ui.h,
+      ui.font, ui.scale, ui.z,
+      ui.backdrop,
+      ui.typing_speed,
+      tmp_ops
+    )
+  end
+
+  local bd = Displayer.Text.getTextBoxData(player_id, self.box_id)
+
+  local q_lines = {}
+  if bd and bd.pages then
+    for p = 1, #bd.pages do
+      for l = 1, #bd.pages[p] do
+        table.insert(q_lines, tostring(bd.pages[p][l] or ""))
+      end
+    end
+  end
+  if #q_lines == 0 then q_lines = { question_only } end
+
+  local max_lines = 3
+  if ui.backdrop and ui.backdrop.max_lines then
+    max_lines = tonumber(ui.backdrop.max_lines) or 3
+  end
+
+  local text = build_yesno_text_from_wrapped(q_lines, max_lines)
+
+  -- PASS 2: create the real prompt box
+  Displayer.Text.removeTextBox(player_id, self.box_id)
+
+  local ops = {
+    page_advance = "wait_for_confirm",
+    auto_advance_seconds = 999999,
+    confirm_during_typing = false,
+    type_sfx_path = ui.type_sfx_path,
+    type_sfx_min_dt = ui.type_sfx_min_dt,
+    mugshot = ui.mugshot,
+    wrap_opts = { allow_leading_spaces = true },
+  }
+
+  if Displayer.Text.create_text_box then
+    Displayer.Text.create_text_box(
+      player_id, self.box_id, text,
       ui.x, ui.y, ui.w, ui.h,
       ui.font, ui.scale, ui.z,
       ui.backdrop,
       ui.typing_speed,
       ops
     )
-
-    ---debug
-local bd = Displayer.Text.getTextBoxData(self.player_id, self.box_id)
-if bd and bd.pages and bd.pages[1] then
-  print("[prompt DEBUG] page1_lines=" .. tostring(#bd.pages[1]))
-  print("[prompt DEBUG] inner=(" .. tostring(bd.inner_x) .. "," .. tostring(bd.inner_y) .. ")")
-end
-
   else
     Displayer.Text.createTextBox(
-      self.player_id, self.box_id, text,
+      player_id, self.box_id, text,
       ui.x, ui.y, ui.w, ui.h,
       ui.font, ui.scale, ui.z,
       ui.backdrop,
@@ -275,60 +339,90 @@ end
       ops
     )
   end
-
 end
 
 function PromptInstance:render_cursor()
   local ui = self.ui
-  local cx, cy = yesno_cursor_pos(self.player_id, self.box_id, self.ui, self.selection)
-  selector_erase(self.player_id, self.cursor_id)
-  selector_draw(self.player_id, self.cursor_id, cx, cy, ui.z + 2, ui.scale)
+  local player_id = self.player_id
+
+  local cx, cy = yesno_cursor_pos(player_id, self.box_id, ui, self.selection)
+  selector_erase(player_id, self.cursor_id)
+  selector_draw(player_id, self.cursor_id, cx, cy, ui.z + 2, ui.scale)
 end
 
 function PromptInstance:update(dt)
-  local pid = self.player_id
-  -- Wait until the textbox is done typing before we show the selector cursor
--- and accept inputs.
-if not self.ready_for_input then
-  local st = Displayer.Text.getTextBoxState(pid, self.box_id)
-  if st == "waiting" or st == "completed" then
-    self.ready_for_input = true
+  local player_id = self.player_id
+  local st = Displayer.Text.getTextBoxState(player_id, self.box_id)
 
--- Only swallow if the player is currently holding confirm/cancel.
--- Otherwise we risk eating their first real press and it feels like "two confirms".
-if Input.is_down(pid, "confirm") or Input.is_down(pid, "cancel") then
-  Input.consume(pid)
-  Input.require_release(pid, { "confirm", "cancel" })
-end
-
-
-    self.cursor_visible = true
-    self:render_cursor()
+  -- Toggle the textbox "next" indicator:
+  -- show it while paging prompt text, hide it when Yes/No is visible.
+  local bd = Displayer.Text.getTextBoxData(player_id, self.box_id)
+  if bd and bd.backdrop and bd.backdrop.indicator then
+    bd.backdrop.indicator.enabled = not options_visible_on_current_page(player_id, self.box_id)
   end
-  return
-end
 
+  -- Anti-queue: never allow inputs pressed during typing to "land" later
 
-local moved = false
+  if st == "printing" then
+    Input.pop(player_id, "confirm")
+    Input.pop(player_id, "cancel")
+    return
+  end
 
-if Input.pop(pid, "left") or Input.pop(pid, "right") then
-  self.selection = (self.selection == 1) and 2 or 1
-  self:render_cursor()
-  moved = true
-end
+  if not self.ready_for_input then
+  -- While options are NOT visible, never allow directional input to queue
+Input.pop(player_id, "left")
+Input.pop(player_id, "right")
+Input.pop(player_id, "up")
+Input.pop(player_id, "down")
 
--- (optional) if you want to forbid confirm on the same tick as a move:
--- if moved then return end
+    -- Become ready ONLY when the options line is actually visible
+    if (st == "waiting" or st == "completed") and options_visible_on_current_page(player_id, self.box_id) then
+      self.ready_for_input = true
 
+      -- Avoid carry-press if they're holding right now
+      if Input.is_down(player_id, "confirm") or Input.is_down(player_id, "cancel") then
+        Input.consume(player_id)
+        Input.require_release(player_id, { "confirm", "cancel" })
+      end
 
- if Input.pop(pid, "confirm") then
-    Prompt.close(pid, "confirm")
+      self:render_cursor()
+      return
+    end
+
+    -- If we're waiting but options aren't visible yet, confirm advances pages
+    if st == "waiting" and Input.pop(player_id, "confirm") then
+      Displayer.Text.advance_text_box(player_id, self.box_id)
+
+      -- Prevent a fast double-tap from pre-confirming the next state
+      Input.consume(player_id)
+      Input.swallow(player_id, 0.08)
+
+      return
+    end
+
+    -- Cancel does nothing until options are visible (prevents queued cancel)
+    Input.pop(player_id, "cancel")
+    return
+  end
+
+  -- READY: left/right toggles selection
+  if Input.pop(player_id, "left") or Input.pop(player_id, "right") then
+    self.selection = (self.selection == 1) and 2 or 1
+    self:render_cursor()
+    return
+  end
+
+  -- Confirm chooses
+  if Input.pop(player_id, "confirm") then
+    Prompt.close(player_id, "confirm")
     if self.selection == 1 then self.on_yes() else self.on_no() end
     return
   end
 
-  if Input.pop(pid, "cancel") then
-    Prompt.close(pid, "cancel")
+  -- Cancel closes
+  if Input.pop(player_id, "cancel") then
+    Prompt.close(player_id, "cancel")
     self.on_cancel()
     return
   end
@@ -337,7 +431,6 @@ end
 --========================
 -- Public API
 --========================
-
 function Prompt.yesno(player_id, opts)
   ensure_listener()
   ensure_tick()
@@ -346,12 +439,10 @@ function Prompt.yesno(player_id, opts)
     Prompt.close(player_id, "replace")
   end
 
-  -- Prompt owns input while open
   set_input_locked(player_id, true)
 
-  -- Swallow the interaction press
+  -- swallow interaction press
   Input.consume(player_id)
-
 
   local inst = PromptInstance:new(player_id, opts or {})
   Prompt.instances[player_id] = inst
@@ -368,8 +459,13 @@ function Prompt.close(player_id, reason)
   set_input_locked(player_id, false)
 
   -- Clean exit: avoid carry-press into world/NPC
-Input.consume(player_id)
-Input.require_release(player_id, { "confirm", "cancel" })
+  Input.consume(player_id)
+
+  -- Only require release if the player is ACTUALLY holding a button right now.
+  -- If we always require release, the next dialogue feels like it needs 2 confirms.
+  if Input.is_down(player_id, "confirm") or Input.is_down(player_id, "cancel") then
+    Input.require_release(player_id, { "confirm", "cancel" })
+  end
 
   Prompt.instances[player_id] = nil
 end
