@@ -130,10 +130,13 @@ end
 -- For a binding group, compute:
 --   down_change: true/false/nil (nil = no change this packet)
 --   saw_pressed: true if any binding emitted "Pressed" this packet
+--   saw_held:    true if any binding emitted "Held" this packet
+--   saw_scroll:  true if any binding emitted "Scroll" this packet
 local function resolve_group(map, names)
   local saw_pressed = false
   local saw_held = false
   local saw_released = false
+  local saw_scroll = false
 
   for _, n in ipairs(names or {}) do
     local s = map[n]
@@ -141,19 +144,24 @@ local function resolve_group(map, names)
       if is_pressed(s) then saw_pressed = true end
       if is_held(s) then saw_held = true end
       if is_released(s) then saw_released = true end
+      if is_scroll(s) then saw_scroll = true end
     end
   end
 
+  -- Any down signal this packet means "down" (Pressed OR Held)
   if saw_pressed or saw_held then
-    return true, saw_pressed
+    return true, saw_pressed, saw_held, saw_scroll
   end
 
   if saw_released then
-    return false, false
+    return false, false, false, saw_scroll
   end
 
-  return nil, false
+  -- nil => no change (sticky)
+  return nil, false, false, saw_scroll
 end
+
+
 
 local function dbg_ok_to_print(s)
   if not Input.DEBUG then return false end

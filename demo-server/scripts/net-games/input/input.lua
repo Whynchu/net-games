@@ -4,24 +4,25 @@
 -- - Listens to Net:on("virtual_input") once
 -- - Tracks per-player edge presses (confirm/cancel/dpad)
 -- - IMPORTANT: missing keys in event.events do NOT imply released
--- - Input states (per docs):
---     0 = Pressed
---     1 = Held
---     2 = Released
---   Some forks also emit:
---     4 = Scroll (repeat pulse)
+--
+-- Input states (per docs):
+--   0 = Pressed
+--   1 = Held
+--   2 = Released
+-- Some forks also emit:
+--   4 = Scroll (repeat pulse)
 --
 -- Supports BOTH event.events formats:
 --   A) array: { {name="Confirm", state=0}, {name="UI Left", state=1} }
 --   B) map:   { ["Confirm"]=0, ["UI Left"]=1 }
 --
--- Extra features:
--- - swallow(player_id, seconds): ignore input for a short window + clear edges
--- - require_release(player_id, {"confirm"}): ignore confirm edges until a release event arrives
---
 -- Key behavior:
--- - confirm/cancel: POP on press only (no hold repeats)
--- - directions: POP on press + repeat on Scroll pulses while held
+-- - confirm/cancel: POP once per down. (Never repeat on hold. Scroll ignored.)
+-- - directions: POP on down + repeat on Scroll pulses while held.
+--
+-- Also supports:
+-- - swallow(player_id, seconds): ignore input briefly + clear edges
+-- - require_release(player_id, {"confirm"}): ignore edges until a release is observed
 
 local Input = {}
 
@@ -31,12 +32,16 @@ local st = {}
 --=====================================================
 -- Debug toggles
 --=====================================================
-Input.DEBUG = false                 -- master debug
-Input.DEBUG_THROTTLE = 0            -- seconds; set to 0 for no throttle
-Input.DEBUG_CONFIRM_ONLY = false    -- if true, prints only when confirm group appears in packet
-Input.DEBUG_DUMP_PACKET = false     -- if true, prints interpreted map each packet (can be noisy)
+Input.DEBUG = true                -- master debug
+Input.DEBUG_THROTTLE = 0          -- seconds; 0 = no throttle
+Input.DEBUG_CONFIRM_ONLY = false  -- if true, prints only when confirm group appears in packet
+Input.DEBUG_DUMP_PACKET = true    -- if true, prints interpreted map each packet (noisy)
 
 local function now() return os.clock() end
+
+-- How long we wait without seeing confirm/cancel before treating it as "up".
+-- Missing keys in event.events do NOT imply released.
+local NON_DIR_UP_TIMEOUT = 0.12
 
 local function ensure(player_id)
   if not st[player_id] then
@@ -45,10 +50,14 @@ local function ensure(player_id)
       swallow_until = 0,
       require_release = {},
 
+      -- non-dir latch: we synthesize an "up" if we stop seeing the key for a bit
+      non_dir_down_until = { confirm = 0, cancel = 0 },
+      non_dir_armed      = { confirm = true, cancel = true },
+
       down = {
         confirm=false, cancel=false,
         left=false, right=false,
-        up=false, down=false
+        up=false, down=false,
       },
 
       last_print = 0,
@@ -73,7 +82,6 @@ end
 
 local function normalize_state(s)
   if s == 0 or s == 1 or s == 2 or s == 4 then return s end
-  -- allow string states just in case (some forks do this)
   if type(s) == "string" then
     local t = s:lower()
     if t == "pressed" then return 0 end
@@ -93,10 +101,11 @@ local function is_dir_key(k)
   return k == "left" or k == "right" or k == "up" or k == "down"
 end
 
--- Default bindings: adjust after you discover real names with debug_dump_seen_names()
+-- Default bindings: keep confirm/cancel *pure* so Scroll-y gameplay actions
+-- can't masquerade as UI confirm/cancel.
 local DEFAULT_BINDINGS = {
-  confirm = { "Confirm", "Interact", "Use Card", "A", "OK", "Accept" },
-  cancel  = { "Cancel", "Back", "Run", "Cust Menu", "B" },
+  confirm = { "Confirm", "A", "OK", "Accept" },
+  cancel  = { "Cancel", "Back", "B" },
 
   left    = { "UI Left", "Move Left", "Left" },
   right   = { "UI Right", "Move Right", "Right" },
@@ -142,34 +151,38 @@ end
 
 -- For a binding group, compute:
 --   down_change: true/false/nil (nil = no change this packet)
---   saw_pressed: true if any binding emitted "Pressed" this packet
---   saw_scroll:  true if any binding emitted "Scroll" this packet
-local function resolve_group(map, names)
-  local saw_pressed = false
-  local saw_held = false
+--   saw_pressed/saw_held/saw_scroll
+-- promote_scroll_to_held: ONLY true for directional groups
+local function resolve_group(map, names, promote_scroll_to_held)
+  local saw_pressed  = false
+  local saw_held     = false
   local saw_released = false
-  local saw_scroll = false
+  local saw_scroll   = false
 
   for _, n in ipairs(names or {}) do
     local s = map[n]
     if s ~= nil then
-      if is_pressed(s) then saw_pressed = true end
-      if is_held(s) then saw_held = true end
+      if is_pressed(s)  then saw_pressed  = true end
+      if is_held(s)     then saw_held     = true end
       if is_released(s) then saw_released = true end
-      if is_scroll(s) then saw_scroll = true end
+      if is_scroll(s) then
+        saw_scroll = true
+        if promote_scroll_to_held then
+          saw_held = true
+        end
+      end
     end
   end
 
   if saw_pressed or saw_held then
-    return true, saw_pressed, saw_scroll
+    return true, saw_pressed, saw_held, saw_scroll
   end
 
   if saw_released then
-    return false, false, saw_scroll
+    return false, false, false, saw_scroll
   end
 
-  -- nil => no change (sticky)
-  return nil, false, saw_scroll
+  return nil, false, false, saw_scroll
 end
 
 local function dbg_ok_to_print(s)
@@ -241,23 +254,6 @@ function Input.require_release(player_id, keys)
   end
 end
 
--- Helpful: discover what names the client is actually sending
-function Input.debug_dump_seen_names(player_id)
-  local s = ensure(player_id)
-  local names = {}
-  for n, _ in pairs(s.seen_names) do table.insert(names, n) end
-  table.sort(names)
-  print("[InputDBG] player=" .. tostring(player_id) .. " seen_names(" .. tostring(#names) .. "): " .. table.concat(names, ", "))
-end
-
-function Input.debug_dump_seen_states(player_id)
-  local s = ensure(player_id)
-  local states = {}
-  for stv, _ in pairs(s.seen_states) do table.insert(states, tostring(stv)) end
-  table.sort(states)
-  print("[InputDBG] player=" .. tostring(player_id) .. " seen_states: " .. table.concat(states, ", "))
-end
-
 function Input.debug_dump_last_packet(player_id)
   local s = ensure(player_id)
   print("[InputDBG] player=" .. tostring(player_id) ..
@@ -294,8 +290,6 @@ function Input.attach_virtual_input_listener(bindings)
     local s = ensure(player_id)
     local t = now()
 
-    local events = event.events
-
     -- swallow window: ignore packets completely
     if s.swallow_until and t < s.swallow_until then
       if Input.DEBUG and dbg_ok_to_print(s) then
@@ -304,7 +298,7 @@ function Input.attach_virtual_input_listener(bindings)
       return
     end
 
-    local map, shape, raw_count = build_event_map(events)
+    local map, shape, raw_count = build_event_map(event.events)
     s.last_shape = shape
     s.last_raw_count = raw_count
     s.last_map = map
@@ -318,41 +312,76 @@ function Input.attach_virtual_input_listener(bindings)
     -- Apply group logic
     local keys = { "confirm","cancel","left","right","up","down" }
     for _, k in ipairs(keys) do
-      local down_change, saw_pressed, saw_scroll = resolve_group(map, bindings[k])
+      local down_change, saw_pressed, saw_held, saw_scroll =
+        resolve_group(map, bindings[k], is_dir_key(k))
 
-      if s.require_release[k] then
-        -- Clear lock only when we SEE a release for that group
-        if down_change == false then
-          s.require_release[k] = nil
-          s.down[k] = false
+      --=====================================================
+      -- NON-DIRECTION KEYS: POP once per down.
+      -- IMPORTANT: IGNORE Scroll completely for confirm/cancel.
+      -- Some clients never emit Pressed; they jump straight to Held.
+      -- So: allow Held to create an edge ONLY if we were previously up.
+      --=====================================================
+      if not is_dir_key(k) then
+        local saw_down_signal = saw_pressed or (saw_held and not s.down[k])
+
+        if s.require_release[k] then
+          if saw_down_signal then
+            s.non_dir_down_until[k] = t + NON_DIR_UP_TIMEOUT
+            s.down[k] = true
+          elseif t >= (s.non_dir_down_until[k] or 0) then
+            s.down[k] = false
+            s.non_dir_armed[k] = true
+            s.require_release[k] = nil
+          end
+
         else
-          -- track down state but never emit edges
-          if down_change ~= nil then
-            s.down[k] = down_change
+          if saw_down_signal then
+            s.non_dir_down_until[k] = t + NON_DIR_UP_TIMEOUT
+
+            if (not s.down[k]) and s.non_dir_armed[k] then
+              s.edge[k] = true
+              s.non_dir_armed[k] = false
+            end
+
+            s.down[k] = true
+
+          elseif t >= (s.non_dir_down_until[k] or 0) then
+            s.down[k] = false
+            s.non_dir_armed[k] = true
           end
         end
 
+      --=====================================================
+      -- DIRECTIONS: sticky down state + repeat on Scroll pulses
+      --=====================================================
       else
-        if down_change ~= nil then
-          local was = s.down[k]
-          s.down[k] = down_change
+        if s.require_release[k] then
+          if down_change == false then
+            s.require_release[k] = nil
+            s.down[k] = false
+          else
+            if down_change ~= nil then
+              s.down[k] = down_change
+            end
+          end
 
-          -- Edge on FIRST transition up->down (Pressed OR Held)
-          if down_change == true and not was then
+        else
+          if down_change ~= nil then
+            local was = s.down[k]
+            s.down[k] = down_change
+            if down_change == true and not was then
+              s.edge[k] = true
+            end
+          end
+
+          -- repeat while held (Scroll pulses)
+          if saw_scroll and s.down[k] then
             s.edge[k] = true
           end
         end
-
-        -- NEW: directional repeat on Scroll pulses while held.
-        -- This does NOT affect confirm/cancel.
-        if is_dir_key(k) and saw_scroll and s.down[k] then
-          s.edge[k] = true
-        end
-        -- nil => keep previous (sticky)
       end
     end
 
-    -- Debug printing
     if Input.DEBUG and dbg_ok_to_print(s) then
       local confirm_present = any_binding_present(map, bindings.confirm)
       if (not Input.DEBUG_CONFIRM_ONLY) or confirm_present then

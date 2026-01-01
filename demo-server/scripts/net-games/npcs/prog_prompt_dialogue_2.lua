@@ -7,7 +7,7 @@
 local Direction = require("scripts/libs/direction")
 local Dialogue  = require("scripts/net-games/dialogue/dialogue")
 
-local DEBUG = false
+local DEBUG = true
 local function dbg(msg)
   if DEBUG then print("[prog_prompt_dialogue_2] " .. tostring(msg)) end
 end

@@ -363,11 +363,17 @@ function PromptInstance:update(dt)
 
   -- Anti-queue: never allow inputs pressed during typing to "land" later
 
-  if st == "printing" then
-    Input.pop(player_id, "confirm")
-    Input.pop(player_id, "cancel")
-    return
-  end
+if st == "printing" then
+  -- IMPORTANT: do NOT pop confirm here, or typing-skip can't work.
+  -- Only prevent cursor movement from queuing.
+  Input.pop(player_id, "left")
+  Input.pop(player_id, "right")
+  Input.pop(player_id, "up")
+  Input.pop(player_id, "down")
+  return
+end
+
+
 
   if not self.ready_for_input then
   -- While options are NOT visible, never allow directional input to queue
@@ -380,11 +386,18 @@ Input.pop(player_id, "down")
     if (st == "waiting" or st == "completed") and options_visible_on_current_page(player_id, self.box_id) then
       self.ready_for_input = true
 
-      -- Avoid carry-press if they're holding right now
-      if Input.is_down(player_id, "confirm") or Input.is_down(player_id, "cancel") then
+      -- Avoid carry-press: if they're holding ANY relevant key, force release
+      local held = {}
+      if Input.is_down(player_id, "left")    then table.insert(held, "left")    end
+      if Input.is_down(player_id, "right")   then table.insert(held, "right")   end
+      if Input.is_down(player_id, "up")      then table.insert(held, "up")      end
+      if Input.is_down(player_id, "down")    then table.insert(held, "down")    end
+
+      if #held > 0 then
         Input.consume(player_id)
-        Input.require_release(player_id, { "confirm", "cancel" })
+        Input.require_release(player_id, held)
       end
+
 
       self:render_cursor()
       return
@@ -394,12 +407,13 @@ Input.pop(player_id, "down")
     if st == "waiting" and Input.pop(player_id, "confirm") then
       Displayer.Text.advance_text_box(player_id, self.box_id)
 
-      -- Prevent a fast double-tap from pre-confirming the next state
+      -- Must release before next confirm can register (prevents hold-spam through pages)
       Input.consume(player_id)
-      Input.swallow(player_id, 0.08)
+      Input.require_release(player_id, { "confirm" })
 
       return
     end
+
 
     -- Cancel does nothing until options are visible (prevents queued cancel)
     Input.pop(player_id, "cancel")
