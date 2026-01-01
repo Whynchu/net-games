@@ -8,8 +8,6 @@
 --     0 = Pressed
 --     1 = Held
 --     2 = Released
---   Some forks also emit:
---     4 = Scroll (repeat pulse)
 --
 -- Supports BOTH event.events formats:
 --   A) array: { {name="Confirm", state=0}, {name="UI Left", state=1} }
@@ -18,10 +16,6 @@
 -- Extra features:
 -- - swallow(player_id, seconds): ignore input for a short window + clear edges
 -- - require_release(player_id, {"confirm"}): ignore confirm edges until a release event arrives
---
--- Key behavior:
--- - confirm/cancel: POP on press only (no hold repeats)
--- - directions: POP on press + repeat on Scroll pulses while held
 
 local Input = {}
 
@@ -32,9 +26,9 @@ local st = {}
 -- Debug toggles
 --=====================================================
 Input.DEBUG = false                 -- master debug
-Input.DEBUG_THROTTLE = 0            -- seconds; set to 0 for no throttle
+Input.DEBUG_THROTTLE = 0         -- seconds; set to 0 for no throttle
 Input.DEBUG_CONFIRM_ONLY = false    -- if true, prints only when confirm group appears in packet
-Input.DEBUG_DUMP_PACKET = false     -- if true, prints interpreted map each packet (can be noisy)
+Input.DEBUG_DUMP_PACKET = false    -- if true, prints interpreted map each packet (can be noisy)
 
 local function now() return os.clock() end
 
@@ -67,19 +61,17 @@ local function state_word(s)
   if s == 0 then return "Pressed" end
   if s == 1 then return "Held" end
   if s == 2 then return "Released" end
-  if s == 4 then return "Scroll" end
   return "INVALID"
 end
 
 local function normalize_state(s)
-  if s == 0 or s == 1 or s == 2 or s == 4 then return s end
+  if s == 0 or s == 1 or s == 2 then return s end
   -- allow string states just in case (some forks do this)
   if type(s) == "string" then
     local t = s:lower()
     if t == "pressed" then return 0 end
     if t == "held" then return 1 end
     if t == "released" then return 2 end
-    if t == "scroll" then return 4 end
   end
   return nil
 end
@@ -87,11 +79,6 @@ end
 local function is_pressed(s)  return s == 0 end
 local function is_held(s)     return s == 1 end
 local function is_released(s) return s == 2 end
-local function is_scroll(s)   return s == 4 end
-
-local function is_dir_key(k)
-  return k == "left" or k == "right" or k == "up" or k == "down"
-end
 
 -- Default bindings: adjust after you discover real names with debug_dump_seen_names()
 local DEFAULT_BINDINGS = {
@@ -143,12 +130,10 @@ end
 -- For a binding group, compute:
 --   down_change: true/false/nil (nil = no change this packet)
 --   saw_pressed: true if any binding emitted "Pressed" this packet
---   saw_scroll:  true if any binding emitted "Scroll" this packet
 local function resolve_group(map, names)
   local saw_pressed = false
   local saw_held = false
   local saw_released = false
-  local saw_scroll = false
 
   for _, n in ipairs(names or {}) do
     local s = map[n]
@@ -156,20 +141,18 @@ local function resolve_group(map, names)
       if is_pressed(s) then saw_pressed = true end
       if is_held(s) then saw_held = true end
       if is_released(s) then saw_released = true end
-      if is_scroll(s) then saw_scroll = true end
     end
   end
 
   if saw_pressed or saw_held then
-    return true, saw_pressed, saw_scroll
+    return true, saw_pressed
   end
 
   if saw_released then
-    return false, false, saw_scroll
+    return false, false
   end
 
-  -- nil => no change (sticky)
-  return nil, false, saw_scroll
+  return nil, false
 end
 
 local function dbg_ok_to_print(s)
@@ -318,7 +301,7 @@ function Input.attach_virtual_input_listener(bindings)
     -- Apply group logic
     local keys = { "confirm","cancel","left","right","up","down" }
     for _, k in ipairs(keys) do
-      local down_change, saw_pressed, saw_scroll = resolve_group(map, bindings[k])
+      local down_change, saw_pressed = resolve_group(map, bindings[k])
 
       if s.require_release[k] then
         -- Clear lock only when we SEE a release for that group
@@ -331,22 +314,16 @@ function Input.attach_virtual_input_listener(bindings)
             s.down[k] = down_change
           end
         end
-
       else
         if down_change ~= nil then
           local was = s.down[k]
           s.down[k] = down_change
 
-          -- Edge on FIRST transition up->down (Pressed OR Held)
-          if down_change == true and not was then
-            s.edge[k] = true
-          end
-        end
-
-        -- NEW: directional repeat on Scroll pulses while held.
-        -- This does NOT affect confirm/cancel.
-        if is_dir_key(k) and saw_scroll and s.down[k] then
-          s.edge[k] = true
+            -- Edge on FIRST transition up->down (Pressed OR Held)
+            -- This prevents softlocks when the first Pressed gets swallowed or never arrives.
+            if down_change == true and not was then
+              s.edge[k] = true
+            end
         end
         -- nil => keep previous (sticky)
       end

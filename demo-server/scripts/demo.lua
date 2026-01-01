@@ -22,7 +22,7 @@ require("scripts/net-games/npcs/prog_basic_dialogue")
 require("scripts/net-games/npcs/prog_basic_freedraw")
 require("scripts/net-games/npcs/prog_dramatic_dialogue")
 require("scripts/net-games/npcs/prog_dyed_dialogue")
-
+require("scripts/net-games/npcs/prog_prompt_dialogue")
 -------------------------------------------
 -- DEMO CODE FOR NPC THAT GIVES COSMETIC --
 -------------------------------------------

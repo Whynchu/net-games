@@ -1,8 +1,11 @@
 -- scripts/net-games/dialogue/dialogue.lua
+require("scripts/net-games/framework")
 
 local Displayer = require("scripts/net-games/displayer/displayer")
 local Input     = require("scripts/net-games/input/input")
 local C         = require("scripts/net-games/dialogue/constants")
+local Prompt    = require("scripts/net-games/dialogue/prompt")
+
 
 local Dialogue = {}
 Dialogue.instances = {}
@@ -50,6 +53,7 @@ local function ensure_listener()
   LISTENER_ATTACHED = true
   Input.attach_virtual_input_listener()
 end
+
 
 local function default_opts()
   return {
@@ -167,6 +171,11 @@ function Dialogue.is_active(player_id)
   return Dialogue.instances[player_id] ~= nil
 end
 
+function Dialogue.prompt_yesno(player_id, opts)
+  return Prompt.yesno(player_id, opts)
+end
+
+
 function Dialogue.start(player_id, script, opts)
   ensure_listener()
   attach_tick()
@@ -184,11 +193,12 @@ function Dialogue.start(player_id, script, opts)
     end
   end
 
-    -- swallow the interaction press so it doesn't instantly advance
-    -- IMPORTANT: do NOT require_release here, because virtual_input
-    -- only exists while locked and we may never see the release event.
-    Input.consume(player_id)
-    Input.swallow(player_id, 0.10)
+-- swallow the interaction press so it doesn't instantly advance
+-- (but allow callers like prompts to opt out)
+if not o.from_prompt then
+  Input.consume(player_id)
+  Input.swallow(player_id, 0.10)
+end
 
   -- normalize script/pages into one text blob (net-games Displayer handles paging internally)
   local pages = {}
@@ -210,7 +220,7 @@ function Dialogue.start(player_id, script, opts)
 
   local full_text = table.concat(pages, "\n")
 
-    --=====================================================
+  --=====================================================
   -- UI passthrough (NPC can control sizing/styling)
   -- opts.ui (preferred) or opts.textbox (alias)
   --=====================================================

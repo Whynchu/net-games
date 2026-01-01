@@ -190,6 +190,17 @@ local function compute_mug_layout(box_data)
   }
 end
 
+local function line_height_px_for(font_name, scale, base_line_height)
+  local lh = base_line_height or 12
+
+  -- THIN needs extra breathing room
+  if font_name == "THIN_BLACK" or font_name == "THIN" then
+    lh = lh + 2 -- at scale 2 => +2px total
+  end
+
+  return lh * scale
+end
+
 
 function TextDisplay:init()
     self.player_texts = {}
@@ -372,7 +383,7 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
       local tmp_box = {
         mugshot = mugshot,
         scale = scale,
-        _line_height_px = (self.text_box_settings.line_height * scale),
+        _line_height_px = line_height_px_for(font_name, scale, self.text_box_settings.line_height),
       }
       mug_layout = compute_mug_layout(tmp_box)
 
@@ -391,6 +402,15 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
 
       end
     end
+
+    -- Allow callers to override/extend wrapping behavior (ex: prompts)
+if opts and opts.wrap_opts then
+  wrap_opts = wrap_opts or {}
+  for k, v in pairs(opts.wrap_opts) do
+    wrap_opts[k] = v
+  end
+end
+
 
 
 
@@ -490,7 +510,7 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
         mugshot = mugshot,
         mug_layout = mug_layout,
         line_x_offsets = {},
-        _line_height_px = (self.text_box_settings.line_height * scale),
+        _line_height_px = line_height_px_for(font_name, scale, self.text_box_settings.line_height),
         backdrop = actual_backdrop_config, -- Store the actual backdrop config
         backdrop_id = nil,
         _backdrop_allocated = false,
@@ -819,7 +839,11 @@ function TextDisplay:wrapTextToPages(text, font_name, scale, max_width, max_heig
   local base_spacing = self.text_box_settings.char_spacing or 1
   local scaled_spacing = base_spacing * scale
 
-  local line_height = self.text_box_settings.line_height * scale
+local base_lh = self.text_box_settings.line_height
+if font_name == "THIN_BLACK" or font_name == "THIN" then
+  base_lh = base_lh + 2  -- +1 at scale 2 => +2px
+end
+local line_height = base_lh * scale
 
   local chars_per_pixel = (char_width + scaled_spacing)
   local max_chars_per_line = math.floor(max_width / chars_per_pixel)
@@ -932,25 +956,28 @@ function TextDisplay:wrapTextToPages(text, font_name, scale, max_width, max_heig
       idx = idx + 1
 
     else
-      if tok.t == "spaces" then
-        -- never start a line with spaces
-        if current_line_chars == 0 then
-          idx = idx + 1
-        else
-          local n = tok.n or 1
+if tok.t == "spaces" then
+  local allow_leading_spaces = wrap_opts and wrap_opts.allow_leading_spaces
 
-          local limit = line_limit(#current_page + 1)
-          if current_line_chars + n <= limit then
+  local n = tok.n or 1
+  local limit = line_limit(#current_page + 1)
 
-            current_line = current_line .. string.rep(" ", n)
-            current_line_chars = current_line_chars + n
-            idx = idx + 1
-          else
-            -- space doesn't fit: wrap, and drop spaces at new line start
-            push_line(false)
-            idx = idx + 1
-          end
-        end
+  if current_line_chars == 0 and not allow_leading_spaces then
+    -- default behavior: drop leading spaces
+    idx = idx + 1
+  else
+    -- keep spaces (including leading) if they fit
+    if current_line_chars + n <= limit then
+      current_line = current_line .. string.rep(" ", n)
+      current_line_chars = current_line_chars + n
+      idx = idx + 1
+    else
+      -- wrap; if we wrap, we drop spaces at the start of the new line
+      push_line(false)
+      idx = idx + 1
+    end
+  end
+
 
       else
         -- tok.t == "word"
@@ -1263,7 +1290,8 @@ function TextDisplay:drawTextBoxCharacter(player_id, box_id, box_data, play_sfx)
     self:_playTypeSfx(player_id, box_data)
   end
 
-  local line_y = box_data.inner_y + ((box_data.current_line - 1) * self.text_box_settings.line_height * box_data.scale)
+local lh = box_data._line_height_px or (self.text_box_settings.line_height * box_data.scale)
+local line_y = box_data.inner_y + ((box_data.current_line - 1) * lh)
 
   local char_widths = self.font_system.char_widths[box_data.font] or self.font_system.char_widths.THICK
   local default_char_width = char_widths["A"] or char_widths["0"] or 6
@@ -1453,6 +1481,15 @@ function TextDisplay:isTextBoxCompleted(player_id, box_id)
     end
     return true
 end
+
+function TextDisplay:getTextBoxData(player_id, box_id)
+    local player_data = self.player_texts[player_id]
+    if not player_data then return nil end
+
+    local box_data = player_data.active_text_boxes[box_id]
+    return box_data
+end
+
 
 function TextDisplay:getTextBoxState(player_id, box_id)
     local player_data = self.player_texts[player_id]

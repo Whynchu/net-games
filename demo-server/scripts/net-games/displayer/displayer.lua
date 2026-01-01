@@ -409,30 +409,34 @@ function Displayer:_setupSubAPIs()
         return subsystem:setMarqueeSpeed(player_id, text_id, speed)
     end
 
-self.Text.createTextBox = function(player_id, box_id, text, x, y, width, height, font_name, scale, z_order, backdrop_config, speed, opts)
-    local subsystem = mainInstance:_getSubsystem("TextDisplaySystem", "createTextBox")
-    if not subsystem or not player_id or not box_id or not text then 
-        print("Error: player_id, box_id and text are required")
-        return nil 
+    self.Text.createTextBox = function(player_id, box_id, text, x, y, width, height, font_name, scale, z_order, backdrop_config, speed, opts)
+        local subsystem = mainInstance:_getSubsystem("TextDisplaySystem", "createTextBox")
+        if not subsystem or not player_id or not box_id or not text then 
+            print("Error: player_id, box_id and text are required")
+            return nil 
+        end
+
+        return subsystem:createTextBox(
+            player_id,
+            box_id,
+            text,
+            x or 0,
+            y or 0,
+            width or 200,
+            height or 100,
+            font_name or "THICK",
+            scale or 2.0,
+            z_order or 100,
+            backdrop_config,
+            speed or 30,
+            opts or nil
+        )
     end
 
-    return subsystem:createTextBox(
-        player_id,
-        box_id,
-        text,
-        x or 0,
-        y or 0,
-        width or 200,
-        height or 100,
-        font_name or "THICK",
-        scale or 2.0,
-        z_order or 100,
-        backdrop_config,
-        speed or 30,
-        opts or nil
-    )
-end
-
+    self.Text.getTextBoxData = function(player_id, box_id)
+        local subsystem = mainInstance:_getSubsystem("TextDisplaySystem", "getTextBoxData")
+        return subsystem:getTextBoxData(player_id, box_id)
+    end
 
     self.Text.advanceTextBox = function(player_id, box_id)
         local subsystem = mainInstance:_getSubsystem("TextDisplaySystem", "advanceTextBox")
