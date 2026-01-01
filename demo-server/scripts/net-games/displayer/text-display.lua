@@ -7,9 +7,11 @@
 --  - Backdrops are LAZY: only allocated/provided when actually used.
 --  - Default backdrop texture_path is nil (library should not assume assets exist).
 --=====================================================
-
 local TextDisplay = {}
 TextDisplay.__index = TextDisplay
+
+local Nameplate = require("scripts/net-games/displayer/nameplate")
+
 
 -- Normalize "loops" option:
 -- nil/true  => infinite (default)
@@ -205,6 +207,7 @@ end
 function TextDisplay:init()
     self.player_texts = {}
     self.font_system = require("scripts/net-games/displayer/font-system")
+    self.nameplate = Nameplate:new(self.font_system)
 
     -- Marquee speed definitions (pixels per second)
     self.marquee_speeds = {
@@ -539,6 +542,16 @@ end
     -- Draw backdrop (safe no-op if no backdrop texture configured)
     self:drawTextBoxBackdrop(player_id, box_id, text_box_data)
     self:drawTextBoxMugshot(player_id, box_id, text_box_data)
+    -- Optional BN nameplate
+-- Optional BN nameplate
+if self.nameplate and opts and opts.nameplate then
+  print("[NAMEPLATE] createTextBox opts.nameplate=", opts.nameplate)
+
+  self.nameplate:attach(player_id, player_data, box_id, text_box_data, opts.nameplate)
+
+  print("[NAMEPLATE] attached? ", text_box_data.nameplate ~= nil)
+end
+
 
     player_data.active_text_boxes[box_id] = text_box_data
     return box_id
@@ -1098,7 +1111,11 @@ function TextDisplay:updateTextBoxes(delta)
 
       -- ALWAYS update cursor (handles show/hide + bob)
       self:updateTextBoxCursor(player_id, box_id, box_data, delta)
-    end
+        -- Nameplate tick (unfold animation)
+        if self.nameplate then
+          self.nameplate:update(player_id, player_data, box_data, delta)
+        end
+      end
   end
 end
 
@@ -1372,6 +1389,12 @@ function TextDisplay:removeTextBox(player_id, box_id)
 
     local box_data = player_data.active_text_boxes[box_id]
     if not box_data then return end
+
+    -- Remove nameplate (if any)
+    if self.nameplate then
+      self.nameplate:erase(player_id, player_data, box_data)
+    end
+
 
     local cursor_id = box_id .. "_cursor"
     Net.player_erase_sprite(player_id, cursor_id)

@@ -118,7 +118,8 @@ function FontSystem:init()
             ["+"] = 5, ["="] = 5, ["\\"] = 5, ["/"] = 5, ["<"] = 5, [">"] = 5,
             ["?"] = 5, [","] = 5, ["."] = 5, ["!"] = 5, ["@"] = 5, ["#"] = 5,
             ["$"] = 5, ["%"] = 5, ["^"] = 5, ["&"] = 5, ["*"] = 5, ["'"] = 5,
-            ['"'] = 5, [":"] = 5, [";"] = 5
+            ['"'] = 5, [":"] = 5, [";"] = 5, [" "] = 5
+
         },
         WIDE = {
             ["A"] = 7, ["B"] = 6, ["C"] = 6, ["D"] = 6, ["E"] = 6, ["F"] = 6,
@@ -212,7 +213,7 @@ function FontSystem:init()
             ["+"] = 5, ["="] = 5, ["\\"] = 5, ["/"] = 5, ["<"] = 5, [">"] = 5,
             ["?"] = 5, [","] = 5, ["."] = 5, ["!"] = 5, ["@"] = 5, ["#"] = 5,
             ["$"] = 5, ["%"] = 5, ["^"] = 5, ["&"] = 5, ["*"] = 5, ["'"] = 5,
-            ['"'] = 5, [":"] = 5, [";"] = 5
+            ['"'] = 5, [":"] = 5, [";"] = 5, [" "] = 5
         },
         WIDE_BLACK = {
             ["A"] = 7, ["B"] = 6, ["C"] = 6, ["D"] = 6, ["E"] = 6, ["F"] = 6,
@@ -355,6 +356,19 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
         local char_width = char_widths[char] or char_widths["A"] or 6
         local scaled_width = char_width * scale
         
+        -- SPACE: advance only (no anim_state exists for " ")
+        if char == " " then
+            current_x = current_x + scaled_width + scaled_spacing
+            goto continue
+        end
+
+        -- SPACE: advance only (no anim_state exists for " ")
+        if char == " " then
+            current_x = current_x + scaled_width + scaled_spacing
+            -- do not draw sprite, do not insert object
+            goto continue
+        end
+
         -- Use very high character IDs to avoid conflicts
         local obj_id = display_id .. "_char_" .. (10000 + i)
         
@@ -398,6 +412,9 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
         
         -- FIXED: Use scaled spacing to preserve monospace at different scales
         current_x = current_x + scaled_width + scaled_spacing
+
+        ::continue::
+
     end
     
     player_data.active_displays[display_id] = display_data

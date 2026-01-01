@@ -279,6 +279,7 @@ end
         type_sfx_min_dt = o.type_sfx_min_dt,
 
         mugshot = (ui and ui.mugshot) or nil,
+        nameplate = (ui and ui.nameplate) or nil,
 
       }
     )
@@ -295,6 +296,8 @@ end
         confirm_during_typing = o.confirm_during_typing,
         type_sfx_path = o.type_sfx_path,
         type_sfx_min_dt = o.type_sfx_min_dt,
+        mugshot = (ui and ui.mugshot) or nil,
+        nameplate = (ui and ui.nameplate) or nil,
       }
     )
   end

@@ -22,7 +22,7 @@ local bot_pos = Net.get_object_by_name(area_id, obj_name)
 assert(bot_pos, "[prog_prompt_dialogue_2] Missing Tiled object named '" .. obj_name .. "' in area: " .. tostring(area_id))
 
 local bot_id = Net.create_bot({
-  name = "Prompt Prog",
+  name = "Prompt Prog.EXE",
   area_id = area_id,
   texture_path = "/server/assets/ow/prog/prog_ow.png",
   animation_path = "/server/assets/ow/prog/prog_ow.animation",
@@ -32,6 +32,8 @@ local bot_id = Net.create_bot({
   direction = Direction.Down,
   solid = true,
 })
+
+local BOT_NAME = Net.get_bot_name(bot_id)
 
 dbg("LOADED bot_id=" .. tostring(bot_id))
 
@@ -44,9 +46,20 @@ local function basic_prog_ui(box_id)
     font = "THIN_BLACK",
     scale = 2.0,
     z = 100,
-    typing_speed = 30,
+    typing_speed = 12,
     type_sfx_path = "/server/assets/net-games/sfx/text.ogg",
     type_sfx_min_dt = 0.05,
+    nameplate = {
+      text = BOT_NAME,
+      anchor = "above",
+      align = "left",
+      gap_x = 6,
+      gap_y = 59,
+
+      bob_amp = 1.2,    -- at scale=2, this feels like ~3–4px on screen
+      bob_speed = 2 -- slower = calmer
+    },
+
 
     backdrop = {
       render_offset_x = 3,

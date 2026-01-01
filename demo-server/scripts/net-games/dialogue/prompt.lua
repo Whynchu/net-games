@@ -96,6 +96,8 @@ local function normalize_ui(ui)
 
     backdrop = ui.backdrop or ui.backdrop_config or nil,
     mugshot  = ui.mugshot or nil,
+    nameplate = ui.nameplate,
+
 
     typing_speed = ui.typing_speed or 99999,
     type_sfx_path = ui.type_sfx_path,
@@ -324,6 +326,7 @@ function PromptInstance:render_initial()
     type_sfx_path = ui.type_sfx_path,
     type_sfx_min_dt = ui.type_sfx_min_dt,
     mugshot = ui.mugshot,
+    nameplate = ui.nameplate,
     wrap_opts = { allow_leading_spaces = true },
   }
 
