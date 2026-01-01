@@ -1,7 +1,6 @@
 --=====================================================
--- prog_prompt_dialogue.lua
--- Tiled-spawned NPC that shows a YES/NO prompt using
--- the SAME textbox_panel UI as prog_basic_dialogue.lua,
+-- prog_prompt_dialogue_2.lua
+-- Tiled-spawned NPC that shows a YES/NO prompt,
 -- then follows up with Dialogue.start.
 --=====================================================
 
@@ -10,17 +9,17 @@ local Dialogue  = require("scripts/net-games/dialogue/dialogue")
 
 local DEBUG = false
 local function dbg(msg)
-  if DEBUG then print("[prog_prompt_dialogue] " .. tostring(msg)) end
+  if DEBUG then print("[prog_prompt_dialogue_2] " .. tostring(msg)) end
 end
 
 --=====================================================
 -- Area / placement (must match your TMX object)
 --=====================================================
 local area_id  = "default"
-local obj_name = "ProgPromptDialogue" -- <-- create a Tiled object with this exact name
+local obj_name = "ProgPromptDialogue" -- create a Tiled object with this exact name
 
 local bot_pos = Net.get_object_by_name(area_id, obj_name)
-assert(bot_pos, "[prog_prompt_dialogue] Missing Tiled object named '" .. obj_name .. "' in area: " .. tostring(area_id))
+assert(bot_pos, "[prog_prompt_dialogue_2] Missing Tiled object named '" .. obj_name .. "' in area: " .. tostring(area_id))
 
 local bot_id = Net.create_bot({
   name = "Prompt Prog",
@@ -37,7 +36,7 @@ local bot_id = Net.create_bot({
 dbg("LOADED bot_id=" .. tostring(bot_id))
 
 --=====================================================
--- Shared UI (clone of prog_basic_dialogue.lua settings)
+-- Shared UI base (clone of prog_basic_dialogue.lua settings)
 --=====================================================
 local function basic_prog_ui(box_id)
   return {
@@ -61,8 +60,12 @@ local function basic_prog_ui(box_id)
       padding_y = 4,
       max_lines = 3,
 
+      -- IMPORTANT:
+      -- Leave indicator enabled in UI. Prompt.lua will toggle it dynamically:
+      -- - ON while paging prompt text
+      -- - OFF when Yes/No is visible (selector replaces it)
       indicator = {
-        enabled = false,
+        enabled = true,
         width = 2,
         height = 2,
         offset_x = 24,
@@ -93,6 +96,21 @@ local function basic_prog_ui(box_id)
   }
 end
 
+-- Two helpers so you can tweak prompt vs dialogue later without collateral damage
+local function prog_ui_prompt(box_id)
+  local ui = basic_prog_ui(box_id)
+  -- keep indicator enabled here; prompt.lua will flip it depending on page
+  ui.backdrop.indicator.enabled = true
+  return ui
+end
+
+local function prog_ui_dialogue(box_id)
+  local ui = basic_prog_ui(box_id)
+  -- normal dialogue should always show the indicator when waiting
+  ui.backdrop.indicator.enabled = true
+  return ui
+end
+
 --=====================================================
 -- Interaction handler
 --=====================================================
@@ -109,38 +127,37 @@ Net:on("actor_interaction", function(event)
   local player_pos = Net.get_player_position(player_id)
   Net.set_bot_direction(bot_id, Direction.from_points(bot_pos, player_pos))
 
-  -- YES/NO prompt using the SAME textbox_panel UI
-  -- IMPORTANT: unique box_id vs the follow-up dialogue box_id
   Dialogue.prompt_yesno(player_id, {
-    question = "Want to check out my themes?",
+    question = "Like what you see?",
 
-    ui = basic_prog_ui("prog_prompt_yesno_box"),
+    ui = prog_ui_prompt("prog_prompt_yesno_box"),
 
     on_yes = function()
       Dialogue.start(player_id, {
-        "Sweet. This NPC is strictly for tuning the textbox UI.",
-        "Prompt used textbox_panel + THIN_BLACK, same as basic prog.",
-        "Next: we wire theme selection without breaking sizing/cursor. :] ",
+        "GLAD TO HEAR IT!{p_2}",
+        "I've got so much more in store!",
       }, {
+        from_prompt = true, -- prevents the double-confirm after prompt
         page_advance = "wait_for_confirm",
         confirm_during_typing = true,
-        ui = basic_prog_ui("prog_prompt_followup_box"),
+        ui = prog_ui_dialogue("prog_prompt_followup_box"),
       })
     end,
 
     on_no = function()
       Dialogue.start(player_id, {
-        "All good.",
-        "Come back when you want to poke the textbox UI again. :] ",
+        "Awh man. :(",
+        "I can understand why though. This can be quite buggy!!!",
       }, {
+        from_prompt = true, -- prevents the double-confirm after prompt
         page_advance = "wait_for_confirm",
         confirm_during_typing = true,
-        ui = basic_prog_ui("prog_prompt_no_box"),
+        ui = prog_ui_dialogue("prog_prompt_no_box"),
       })
     end,
 
     on_cancel = function()
-      -- Silent cancel (no extra chatter)
+      -- Silent cancel
     end,
   })
 end)

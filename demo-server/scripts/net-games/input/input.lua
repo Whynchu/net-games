@@ -32,16 +32,16 @@ local st = {}
 --=====================================================
 -- Debug toggles
 --=====================================================
-Input.DEBUG = true                -- master debug
+Input.DEBUG = false                -- master debug
 Input.DEBUG_THROTTLE = 0          -- seconds; 0 = no throttle
 Input.DEBUG_CONFIRM_ONLY = false  -- if true, prints only when confirm group appears in packet
-Input.DEBUG_DUMP_PACKET = true    -- if true, prints interpreted map each packet (noisy)
+Input.DEBUG_DUMP_PACKET = false    -- if true, prints interpreted map each packet (noisy)
 
 local function now() return os.clock() end
 
 -- How long we wait without seeing confirm/cancel before treating it as "up".
 -- Missing keys in event.events do NOT imply released.
-local NON_DIR_UP_TIMEOUT = 0.12
+local NON_DIR_UP_TIMEOUT = 0.06
 
 local function ensure(player_id)
   if not st[player_id] then

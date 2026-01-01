@@ -123,35 +123,38 @@ local function join_lines(lines)
   return table.concat(lines, "\n")
 end
 
-local function build_yesno_text_from_wrapped(question_lines, max_lines_per_page)
-  max_lines_per_page = math.max(2, tonumber(max_lines_per_page or 3) or 3)
+local function build_yesno_text_from_wrapped(question_lines, _max_lines_per_page)
+  -- Locked “official” layout:
+  -- line 1-2 = question text
+  -- line 3   = "Yes    No"
+  local MAX_LINES_PER_PAGE = 3
+  local ROOM = 2 -- lines available for question before options
 
   local pages = {}
   local chunk = {}
-  local room = max_lines_per_page - 1 -- reserve last line for options
 
   for i = 1, #question_lines do
     table.insert(chunk, question_lines[i])
 
-    -- Only flush a question-only page if there are MORE lines to place.
-    -- If this is the final chunk (even if it exactly fills 'room'), keep it
-    -- so it can share the page with Yes/No.
-    if #chunk >= room and i < #question_lines then
+    -- Flush question-only pages when we have more lines coming.
+    if #chunk >= ROOM and i < #question_lines then
       table.insert(pages, join_lines(chunk))
       chunk = {}
     end
   end
 
-  local final_lines = {}
-  for i = 1, #chunk do
-    table.insert(final_lines, chunk[i])
+  -- Final page: pad so options ALWAYS end up on line 3
+  while #chunk < ROOM do
+    table.insert(chunk, "")
   end
-  table.insert(final_lines, OPTIONS_INDENT .. "Yes    No")
-  table.insert(pages, join_lines(final_lines))
+
+  table.insert(chunk, OPTIONS_INDENT .. "Yes    No")
+  table.insert(pages, join_lines(chunk))
 
   -- formfeed => new page
   return table.concat(pages, "\f")
 end
+
 
 local function options_visible_on_current_page(player_id, box_id)
   local bd = Displayer.Text.getTextBoxData(player_id, box_id)
@@ -244,6 +247,10 @@ function PromptInstance:new(player_id, opts)
   o.ready_for_input = false
   o.selection = 1
   o.cursor_id = o.box_id .. "_selcursor"
+  o.cursor_phase = 0
+  o.cursor_base_x = nil
+  o.cursor_base_y = nil
+
 
   o:render_initial()
   return o
@@ -346,9 +353,13 @@ function PromptInstance:render_cursor()
   local player_id = self.player_id
 
   local cx, cy = yesno_cursor_pos(player_id, self.box_id, ui, self.selection)
-  selector_erase(player_id, self.cursor_id)
+  self.cursor_base_x = cx
+  self.cursor_base_y = cy
+
+  -- draw once immediately (no erase needed every time)
   selector_draw(player_id, self.cursor_id, cx, cy, ui.z + 2, ui.scale)
 end
+
 
 function PromptInstance:update(dt)
   local player_id = self.player_id
@@ -421,6 +432,38 @@ Input.pop(player_id, "down")
   end
 
   -- READY: left/right toggles selection
+-- If options are visible and we're ready, animate the selector cursor (push -> snap loop)
+if self.ready_for_input and options_visible_on_current_page(player_id, self.box_id) then
+  dt = math.min(dt or 0, 1/30)
+
+  -- Tune these two for feel:
+  local speed  = 3.8                      -- higher = faster loop
+  local amp    = 2.0 * (self.ui.scale or 1.0)  -- how far it pushes toward the selection
+
+  self.cursor_phase = (self.cursor_phase or 0) + (dt * speed)
+
+  -- 0..1 repeating
+  local t = self.cursor_phase % 1.0
+
+  -- Ramp right then snap back:
+  -- Ease-out ramp (fast at start, slows near the end) feels "weighted"
+  local eased = 1.0 - (1.0 - t) * (1.0 - t)   -- easeOutQuad
+
+  local push = eased * amp
+
+  if self.cursor_base_x and self.cursor_base_y then
+    selector_draw(
+      player_id,
+      self.cursor_id,
+      self.cursor_base_x + push,
+      self.cursor_base_y,
+      (self.ui.z or 100) + 2,
+      self.ui.scale or 2.0
+    )
+  end
+end
+
+  
   if Input.pop(player_id, "left") or Input.pop(player_id, "right") then
     self.selection = (self.selection == 1) and 2 or 1
     self:render_cursor()
