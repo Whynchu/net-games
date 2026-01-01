@@ -1104,15 +1104,37 @@ end
 
 
 function TextDisplay:updateTextBoxPrinting(player_id, box_id, box_data, delta)
-  -- If currently pausing, count down and stop.
-  box_data._last_delta = delta
-  if box_data.pause_remaining and box_data.pause_remaining > 0 then
-    box_data.pause_remaining = box_data.pause_remaining - delta
-    if box_data.pause_remaining > 0 then
-      return
+-- If currently pausing, count down and stop.
+box_data._last_delta = delta
+
+if box_data.pause_remaining and box_data.pause_remaining > 0 then
+  -- enter pause: force mug to idle once
+  if not box_data._in_pause then
+    box_data._in_pause = true
+    if box_data.mugshot and box_data.mugshot.enabled then
+      -- temporarily treat as "not printing speech"
+      local prev = box_data.state
+      box_data.state = "waiting"
+      self:drawTextBoxMugshot(player_id, box_id, box_data)
+      box_data.state = prev
     end
-    box_data.pause_remaining = 0
   end
+
+  box_data.pause_remaining = box_data.pause_remaining - delta
+  if box_data.pause_remaining > 0 then
+    return
+  end
+
+  -- pause ended
+  box_data.pause_remaining = 0
+  box_data._in_pause = false
+
+  -- resume: restore talk pose once (if we’re still in printing)
+  if box_data.mugshot and box_data.mugshot.enabled then
+    self:drawTextBoxMugshot(player_id, box_id, box_data)
+  end
+end
+
 
   -- Before printing the next character, see if a pause should trigger
   local printed = get_printed_char_count(box_data)

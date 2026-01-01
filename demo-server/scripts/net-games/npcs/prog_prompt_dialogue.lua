@@ -134,7 +134,7 @@ Net:on("actor_interaction", function(event)
 
     on_yes = function()
       Dialogue.start(player_id, {
-        "GLAD TO HEAR IT!{p_2}",
+        "GLAD TO HEAR IT! {p_2}",
         "I've got so much more in store!",
       }, {
         from_prompt = true, -- prevents the double-confirm after prompt
