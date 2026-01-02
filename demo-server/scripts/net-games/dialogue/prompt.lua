@@ -5,12 +5,26 @@ local Displayer  = require("scripts/net-games/displayer/displayer")
 local Input      = require("scripts/net-games/input/input")
 local FontSystem = require("scripts/net-games/displayer/font-system")
 
+
 local Prompt = {}
 Prompt.instances = {}
 Prompt._tick_attached = false
 
 -- Dedicated sprite id ONLY for the selector cursor (do NOT reuse textbox indicator sprite id)
 local SELECTOR_SPRITE_ID = 5200
+
+local CURSOR_MOVE_SFX_PATH = "/server/assets/net-games/sfx/cursor_move.ogg"
+local function play_cursor_move_sfx(player_id)
+  Net.provide_asset_for_player(player_id, CURSOR_MOVE_SFX_PATH)
+
+  if Net.play_sound_for_player then
+    pcall(function() Net.play_sound_for_player(player_id, CURSOR_MOVE_SFX_PATH) end)
+  elseif Net.play_sound then
+    pcall(function() Net.play_sound(player_id, CURSOR_MOVE_SFX_PATH) end)
+  end
+end
+
+
 
 local LISTENER_ATTACHED = false
 local function ensure_listener()
@@ -467,11 +481,13 @@ if self.ready_for_input and options_visible_on_current_page(player_id, self.box_
 end
 
   
-  if Input.pop(player_id, "left") or Input.pop(player_id, "right") then
-    self.selection = (self.selection == 1) and 2 or 1
-    self:render_cursor()
-    return
-  end
+    if Input.pop(player_id, "left") or Input.pop(player_id, "right") then
+      self.selection = (self.selection == 1) and 2 or 1
+      play_cursor_move_sfx(player_id)
+      self:render_cursor()
+      return
+    end
+
 
   -- Confirm chooses
   if Input.pop(player_id, "confirm") then
@@ -514,7 +530,7 @@ function Prompt.close(player_id, reason)
   if not inst then return end
 
   selector_erase(player_id, inst.cursor_id)
-  Displayer.Text.removeTextBox(player_id, inst.box_id)
+    Displayer.Text.closeTextBox(player_id, inst.box_id)
 
   set_input_locked(player_id, false)
 

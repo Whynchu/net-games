@@ -545,11 +545,8 @@ end
     -- Optional BN nameplate
 -- Optional BN nameplate
 if self.nameplate and opts and opts.nameplate then
-  print("[NAMEPLATE] createTextBox opts.nameplate=", opts.nameplate)
-
   self.nameplate:attach(player_id, player_data, box_id, text_box_data, opts.nameplate)
 
-  print("[NAMEPLATE] attached? ", text_box_data.nameplate ~= nil)
 end
 
 
@@ -569,10 +566,7 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
     -- IMPORTANT: must run BEFORE the early-return that checks self.backdrop_sprite
     -- =====================================================
     if style == "textbox_panel" then
-        -- Remove old backdrop if it exists
-        if box_data.backdrop_id then
-            Net.player_erase_sprite(player_id, box_data.backdrop_id)
-        end
+
 
         local sprite_id = 5201
         local tex  = "/server/assets/net-games/displayer/textbox.png"
@@ -586,7 +580,7 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
             Net.player_alloc_sprite(player_id, sprite_id, {
                 texture_path = tex,
                 anim_path = anim,
-                anim_state = "OPEN",
+                anim_state = "OPEN_IDLE",
             })
             player_data.backdrop_allocated.textbox_panel = true
         end
@@ -603,6 +597,15 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
           oy = tonumber(box_data.backdrop.render_offset_y) or 0
         end
 
+        local desired = (box_data.state == "closing") and "CLOSE" or "OPEN_IDLE"
+
+        -- Only send anim_state when it CHANGES (prevents restart/stuck)
+        local anim_to_send = nil
+        if box_data._panel_last_anim_state ~= desired then
+          anim_to_send = desired
+          box_data._panel_last_anim_state = desired
+        end
+
         local draw = {
           id = backdrop_id,
           x  = box_data.x + ox,
@@ -610,8 +613,11 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
           z  = z,
           sx = s,
           sy = s,
-          anim_state = "OPEN",
         }
+        if anim_to_send then
+          draw.anim_state = anim_to_send
+        end
+
 
         -- APPLY OPTIONAL TINT (this is the "tint hook")
         local tint = box_data.backdrop
@@ -645,7 +651,7 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
         Net.player_alloc_sprite(player_id, base_sprite_id, {
           texture_path = base_tex,
           anim_path = base_anim,
-          anim_state = "OPEN",
+          anim_state = "OPEN_IDLE",
         })
         player_data.backdrop_allocated.textbox_panel = true
       end
@@ -662,14 +668,28 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
       local x = box_data.x + ox
       local y = box_data.y + oy
 
+      local desired = (box_data.state == "closing") and "CLOSE" or "OPEN_IDLE"
+
+        local anim_to_send = nil
+        if box_data._panel_last_anim_state ~= desired then
+          anim_to_send = desired
+          box_data._panel_last_anim_state = desired
+        end
+
+
       local base_id = box_id .. "_backdrop"
-      Net.player_draw_sprite(player_id, base_sprite_id, {
-        id = base_id,
-        x = x, y = y,
-        z = z,
-        sx = s, sy = s,
-        anim_state = "OPEN",
-      })
+        local base_draw = {
+          id = base_id,
+          x = x, y = y,
+          z = z,
+          sx = s, sy = s,
+        }
+        if anim_to_send then
+          base_draw.anim_state = anim_to_send
+        end
+        Net.player_draw_sprite(player_id, base_sprite_id, base_draw)
+        box_data.backdrop_id = base_id
+
 
       -- 2) draw tinted frame overlay on top
       local frame_sprite_id = 5202
@@ -682,7 +702,7 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
         Net.player_alloc_sprite(player_id, frame_sprite_id, {
           texture_path = frame_tex,
           anim_path = base_anim,
-          anim_state = "OPEN",
+          anim_state = "OPEN_IDLE",
         })
         player_data.backdrop_allocated.textbox_frame_gray = true
       end
@@ -690,24 +710,25 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
       local tint = box_data.backdrop or {}
       local frame_id = box_id .. "_frame"
 
-      Net.player_draw_sprite(player_id, frame_sprite_id, {
-        id = frame_id,
-        x = x, y = y,
-        z = z + 0.01, -- just above base
-        sx = s, sy = s,
-        anim_state = "OPEN",
+        local frame_draw = {
+          id = frame_id,
+          x = x, y = y,
+          z = z + 0.01,
+          sx = s, sy = s,
 
-        -- tint only the frame sprite
-        r = tint.r or 80,
-        g = tint.g or 255,
-        b = tint.b or 80,
-        a = tint.a or 255,
-        color_mode = tint.color_mode or 2,
-      })
+          r = tint.r or 80,
+          g = tint.g or 255,
+          b = tint.b or 80,
+          a = tint.a or 255,
+          color_mode = tint.color_mode or 2,
+        }
+        if anim_to_send then
+          frame_draw.anim_state = anim_to_send
+        end
+        Net.player_draw_sprite(player_id, frame_sprite_id, frame_draw)
+        box_data.frame_id = frame_id
+        return
 
-      box_data.backdrop_id = base_id
-      box_data.frame_id = frame_id
-      return
     end
 
     -- If no configured backdrop texture, do nothing.
@@ -799,8 +820,6 @@ local desired_state = mug.idle_anim_state or mug.anim_state or "IDLE"
 if box_data.state == "printing" then
   desired_state = mug.talk_anim_state or desired_state
 end
-print("[MUG] box_state=" .. tostring(box_data.state) ..
-      " anim=" .. tostring(desired_state))
 
 
 -- Only push anim_state when it CHANGES, otherwise we restart the animation every draw.
@@ -1101,21 +1120,42 @@ end
 
 function TextDisplay:updateTextBoxes(delta)
   for player_id, player_data in pairs(self.player_texts) do
+    local to_remove = nil
+
     for box_id, box_data in pairs(player_data.active_text_boxes) do
       if box_data.state == "printing" then
         self:updateTextBoxPrinting(player_id, box_id, box_data, delta)
+
       elseif box_data.state == "waiting" then
         self:updateTextBoxWaiting(player_id, box_id, box_data, delta)
+
+      elseif box_data.state == "closing" then
+        local done = self:updateTextBoxClosing(player_id, box_id, box_data, delta, player_data)
+        if done then
+          to_remove = to_remove or {}
+          table.insert(to_remove, box_id)
+        end
+
+      elseif box_data.state == "completed" then
+        -- Close automatically once the content is finished.
+        self:closeTextBox(player_id, box_id)
       end
-      -- state == "completed": do nothing (Dialogue.start removes it)
 
       -- ALWAYS update cursor (handles show/hide + bob)
       self:updateTextBoxCursor(player_id, box_id, box_data, delta)
-        -- Nameplate tick (unfold animation)
-        if self.nameplate then
-          self.nameplate:update(player_id, player_data, box_data, delta)
-        end
+
+      -- Nameplate tick (unfold animation)
+      if self.nameplate then
+        self.nameplate:update(player_id, player_data, box_data, delta)
       end
+    end
+
+    -- Remove after iteration (safe)
+    if to_remove then
+      for _, box_id in ipairs(to_remove) do
+        self:removeTextBox(player_id, box_id)
+      end
+    end
   end
 end
 
@@ -1258,6 +1298,41 @@ function TextDisplay:updateTextBoxWaiting(player_id, box_id, box_data, delta)
       self:clearTextBoxDisplay(player_id, box_id, box_data)
     end
   end
+end
+
+function TextDisplay:updateTextBoxClosing(player_id, box_id, box_data, delta, player_data)
+  -- One-time “enter closing” behavior
+  if not box_data._closing_started then
+    box_data._closing_started = true
+
+    -- Hide cursor (extra safety)
+    local cursor_id = box_id .. "_cursor"
+    Net.player_erase_sprite(player_id, cursor_id)
+    box_data.cursor_visible = false
+
+    -- Remove mugshot immediately so it doesn't float during close
+    if box_data.mug_id then
+      Net.player_erase_sprite(player_id, box_data.mug_id)
+      box_data.mug_id = nil
+    end
+
+    -- Remove nameplate immediately (optional but clean)
+    if self.nameplate and player_data then
+      self.nameplate:erase(player_id, player_data, box_data)
+    end
+  end
+
+  -- Keep panel drawn while closing (CLOSE anim is edge-triggered now)
+  self:drawTextBoxBackdrop(player_id, box_id, box_data)
+
+  box_data.close_timer = (box_data.close_timer or 0) + delta
+  local secs = box_data.close_seconds or 0.25
+
+  if box_data.close_timer >= secs then
+    return true -- tell caller: "ok remove now"
+  end
+
+  return false
 end
 
 
@@ -1417,6 +1492,53 @@ function TextDisplay:removeTextBox(player_id, box_id)
     self:clearTextBoxDisplay(player_id, box_id, box_data)
     player_data.active_text_boxes[box_id] = nil
 end
+
+-- Soft-close: transitions the box into a "closing" lifecycle state.
+-- The actual sprite erasing should happen later (after the close animation finishes).
+function TextDisplay:closeTextBox(player_id, box_id, opts)
+  local player_data = self.player_texts[player_id]
+  if not player_data then return end
+
+  local box_data = player_data.active_text_boxes[box_id]
+  if not box_data then return end
+
+  -- Already closing or already gone? do nothing.
+  if box_data.state == "closing" then
+    return
+  end
+
+  opts = opts or {}
+
+  -- Enter closing state
+  box_data.state = "closing"
+
+  -- Timer used later (Step 3) to decide when to hard-delete
+  box_data.close_timer = 0
+
+  -- How long we let the close animation play (we'll use this later)
+  -- Default is conservative; you can tune once you know the animation length.
+  box_data.close_seconds =
+      opts.close_seconds
+      or box_data.close_seconds
+      or (box_data.backdrop and box_data.backdrop.close_seconds)
+      or 0.25
+
+  -- Hide cursor immediately (so it doesn't float during close)
+  local cursor_id = box_id .. "_cursor"
+  Net.player_erase_sprite(player_id, cursor_id)
+  box_data.cursor_visible = false
+
+  -- Optional: clear text immediately while panel closes
+  -- (Feels nice; also avoids "closing while text still typing" weirdness.)
+  if opts.clear_text ~= false then
+    self:clearTextBoxDisplay(player_id, box_id, box_data)
+  end
+
+  -- Important: stop any printing behavior immediately
+  -- (Prevents the typewriter from continuing behind the closing animation.)
+  box_data.timer = 0
+end
+
 
 function TextDisplay:advanceTextBox(player_id, box_id)
     local player_data = self.player_texts[player_id]

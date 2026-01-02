@@ -487,6 +487,17 @@ function Displayer:_setupSubAPIs()
         return subsystem:removeTextBox(player_id, box_id)
     end
 
+    -- Soft-close (plays close animation, then removes later)
+    self.Text.closeTextBox = function(player_id, box_id, opts)
+      local subsystem = mainInstance:_getSubsystem("TextDisplaySystem", "closeTextBox")
+      if not subsystem or not player_id or not box_id then
+        print("Error: player_id and box_id are required")
+        return nil
+      end
+      return subsystem:closeTextBox(player_id, box_id, opts)
+    end
+
+
     self.Text.isTextBoxCompleted = function(player_id, box_id)
         local subsystem = mainInstance:_getSubsystem("TextDisplaySystem", "isTextBoxCompleted")
         if not subsystem or not player_id or not box_id then 

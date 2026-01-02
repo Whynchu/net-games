@@ -93,7 +93,7 @@ local function close_instance(player_id, reason)
   if not inst then return end
 
   if inst.box_id then
-    Displayer.Text.removeTextBox(player_id, inst.box_id)
+    Displayer.Text.closeTextBox(player_id, inst.box_id)
   end
 
   if inst.opts and inst.opts.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
