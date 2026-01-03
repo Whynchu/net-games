@@ -72,6 +72,7 @@ local function basic_prog_ui(box_id)
       render_offset_x = 3,
       render_offset_y = 46,
       style = "textbox_panel",
+      open_seconds = 0.20,
       x = 1,
       y = 209,
       width = 478,
