@@ -260,6 +260,12 @@ function PromptInstance:new(player_id, opts)
   o.on_no     = (opts and opts.on_no) or function() end
   o.on_cancel = (opts and opts.on_cancel) or function() end
 
+  -- cancel_behavior:
+  --   "select_no" (default): B moves to No, then B confirms No
+  --   "close"              : legacy behavior (B closes prompt + on_cancel)
+  --   "ignore"             : B does nothing
+  o.cancel_behavior = (opts and opts.cancel_behavior) or "select_no"
+
   o.ready_for_input = false
   o.selection = 1
   o.cursor_id = o.box_id .. "_selcursor"
@@ -518,12 +524,37 @@ function PromptInstance:update(dt)
     return
   end
 
-  -- Cancel closes
+  -- Cancel behavior (B)
   if Input.pop(player_id, "cancel") then
-    Prompt.close(player_id, "cancel")
-    self.on_cancel()
+    local beh = self.cancel_behavior or "select_no"
+
+    -- Legacy: B closes prompt immediately
+    if beh == "close" then
+      Prompt.close(player_id, "cancel")
+      self.on_cancel()
+      return
+    end
+
+    -- Optional: ignore B completely
+    if beh == "ignore" then
+      return
+    end
+
+    -- Default: "select_no"
+    -- 1st B: move to No
+    if self.selection ~= 2 then
+      self.selection = 2
+      play_cursor_move_sfx(player_id)
+      self:render_cursor()
+      return
+    end
+
+    -- 2nd B (already on No): confirm No
+    Prompt.close(player_id, "cancel_no")
+    self.on_no()
     return
   end
+
 end
 
 

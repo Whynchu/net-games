@@ -144,7 +144,7 @@ Net:on("actor_interaction", function(event)
 
   Dialogue.prompt_yesno(player_id, {
     question = "Like what you see?",
-
+    cancel_behavior = "select_no",
     ui = prog_ui_prompt("prog_prompt_yesno_box"),
 
     on_yes = function()
