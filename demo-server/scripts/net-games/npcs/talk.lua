@@ -1,6 +1,6 @@
 --=====================================================
 -- talk.lua
--- "Translator" / builder for easy Dialogue NPC scripts
+-- Minimal author API for Dialogue NPCs with PROG-default UI
 --=====================================================
 
 local Direction = require("scripts/libs/direction")
@@ -9,11 +9,12 @@ local Presets   = require("scripts/net-games/npcs/talk_presets")
 
 local Talk = {}
 
+--=====================================================
+-- Small table helpers
+--=====================================================
 local function shallow_copy(t)
   local o = {}
-  if t then
-    for k, v in pairs(t) do o[k] = v end
-  end
+  if t then for k, v in pairs(t) do o[k] = v end end
   return o
 end
 
@@ -29,20 +30,50 @@ local function deep_merge(dst, src)
   return dst
 end
 
-local function build_ui(cfg)
+local function normalize_script(lines_or_text)
+  if type(lines_or_text) == "string" then
+    return { lines_or_text }
+  elseif type(lines_or_text) == "table" then
+    return lines_or_text
+  end
+  return { "..." }
+end
+
+local function stable_box_id(cfg)
+  if cfg.box_id then return tostring(cfg.box_id) end
+  local area = tostring(cfg.area_id or "default")
+  local obj  = tostring(cfg.object or "npc")
+  return "talk_" .. area .. "_" .. obj
+end
+
+--=====================================================
+-- build_ui(cfg, bot_name, opts)
+-- opts.mode = "dialogue" | "prompt"
+--=====================================================
+local function build_ui(cfg, bot_name, opts)
+  opts = opts or {}
+
+  -- 1) Choose pack (default = prog)
+  local pack_key = cfg.preset or cfg.pack or "prog"
+  local pack = Presets.packs[pack_key] or Presets.packs.prog
+
+  -- 2) Choose component presets
+  local box_key = cfg.box or pack.box or "panel"
+  local mug_key = cfg.mug or pack.mug
+  local np_key  = cfg.nameplate or pack.nameplate
+
   local ui = {}
 
-  -- box preset
-  local box_key = cfg.box or "panel"
+  -- Box (base)
   local box = Presets.boxes[box_key] or Presets.boxes.panel
   deep_merge(ui, shallow_copy(box))
   ui.backdrop = shallow_copy(box.backdrop)
   deep_merge(ui.backdrop, box.backdrop)
 
-  -- frame dye preset: switches backdrop style + applies tint values
+  -- Frame dye optional: switches backdrop style + applies tint values
   if cfg.frame then
     local frame = Presets.frames[cfg.frame] or cfg.frame
-    ui.backdrop.style = "textbox_panel_frame_tint"  -- requires your dual-draw style
+    ui.backdrop.style = "textbox_panel_frame_tint"
     if type(frame) == "table" then
       ui.backdrop.r = frame.r
       ui.backdrop.g = frame.g
@@ -52,28 +83,125 @@ local function build_ui(cfg)
     end
   end
 
-  -- mug preset
-  if cfg.mug then
-    local mug = Presets.mugs[cfg.mug] or cfg.mug
+  -- Mugshot
+  if mug_key == false then
+    ui.mugshot = nil
+  elseif mug_key then
+    local mug = Presets.mugs[mug_key] or mug_key
     if type(mug) == "table" then
       ui.mugshot = shallow_copy(mug)
     end
   end
 
-  -- per-NPC overrides (optional)
-  if cfg.ui then
-    deep_merge(ui, cfg.ui)
+  -- Nameplate
+  if np_key == false then
+    ui.nameplate = nil
+  elseif np_key then
+    local np = Presets.nameplates[np_key] or np_key
+    if type(np) == "table" then
+      ui.nameplate = shallow_copy(np)
+      ui.nameplate.text = ui.nameplate.text or bot_name
+    end
   end
 
-  -- stable default box_id if none provided
-  ui.box_id = ui.box_id or ("talk_box_" .. tostring(cfg.object or "npc"))
+  -- Stable box id (prompt + dialogue reuse)
+  ui.box_id = stable_box_id(cfg)
+
+  -- Per-NPC overrides (last)
+  if cfg.ui then
+    deep_merge(ui, cfg.ui)
+    -- If someone overwrote nameplate, ensure text is still sane unless explicitly set
+    if ui.nameplate and ui.nameplate.text == nil then
+      ui.nameplate.text = bot_name
+    end
+    -- If someone overwrote box_id, keep it
+    ui.box_id = ui.box_id or stable_box_id(cfg)
+  end
 
   return ui
 end
 
 --=====================================================
+-- Talk API (what authors should use)
+--=====================================================
+
+-- Talk.start(player_id, script, cfg, bot_name)
+-- Most callers won't use this directly; Talk.npc() does.
+function Talk.start(player_id, script, cfg, bot_name, extra_opts)
+  cfg = cfg or {}
+  local ui = build_ui(cfg, bot_name or (cfg.name or ""))
+  local lines = normalize_script(script)
+
+  local o = {
+    page_advance = cfg.page_advance or "wait_for_confirm",
+    confirm_during_typing = (cfg.confirm_during_typing ~= false),
+    cancel_behavior = cfg.cancel_behavior or "battle_network",
+
+    -- These matter mainly when chaining from prompts
+    from_prompt = (cfg.from_prompt == true),
+    reuse_existing_box = (cfg.reuse_existing_box == true),
+
+    ui = ui,
+    on_finish = cfg.on_finish,
+    debug = cfg.debug,
+  }
+
+  if extra_opts then
+    deep_merge(o, extra_opts)
+  end
+
+  return Dialogue.start(player_id, lines, o)
+end
+
+-- Talk.prompt_yesno(player_id, question, cfg, bot_name, handlers)
+-- handlers = { on_yes = fn, on_no = fn, on_cancel = fn }
+function Talk.prompt_yesno(player_id, question, cfg, bot_name, handlers)
+  cfg = cfg or {}
+  handlers = handlers or {}
+  local ui = build_ui(cfg, bot_name or (cfg.name or ""), { mode = "prompt" })
+
+  return Dialogue.prompt_yesno(player_id, {
+    question = question or "Continue?",
+    cancel_behavior = cfg.prompt_cancel_behavior or cfg.cancel_behavior or "select_no",
+    ui = ui,
+    on_yes = handlers.on_yes,
+    on_no = handlers.on_no,
+    on_cancel = handlers.on_cancel,
+  })
+end
+
+-- Talk.prompt_then_talk(player_id, question, yes_script, no_script, cfg, bot_name)
+function Talk.prompt_then_talk(player_id, question, yes_script, no_script, cfg, bot_name)
+  cfg = cfg or {}
+
+  return Talk.prompt_yesno(player_id, question, cfg, bot_name, {
+    on_yes = function()
+      local next_cfg = shallow_copy(cfg)
+      next_cfg.from_prompt = true
+      next_cfg.reuse_existing_box = true
+      Talk.start(player_id, yes_script, next_cfg, bot_name)
+    end,
+    on_no = function()
+      local next_cfg = shallow_copy(cfg)
+      next_cfg.from_prompt = true
+      next_cfg.reuse_existing_box = true
+      Talk.start(player_id, no_script, next_cfg, bot_name)
+    end,
+    on_cancel = cfg.on_cancel,
+  })
+end
+
+--=====================================================
 -- Talk.npc(cfg)
--- Spawns + wires a Dialogue NPC from a tiny config
+-- Minimal NPC wiring with sane defaults.
+--
+-- Authors should only need:
+--   cfg.area_id, cfg.object, (optional) cfg.name, cfg.lines
+--
+-- Optional:
+--   cfg.preset / cfg.box / cfg.mug / cfg.nameplate / cfg.frame
+--   cfg.ui overrides (mugshot off, tweak offsets, etc.)
+--   cfg.prompt = { question, yes_lines, no_lines }
 --=====================================================
 function Talk.npc(cfg)
   assert(cfg and cfg.object, "[Talk.npc] cfg.object required (Tiled object name)")
@@ -96,26 +224,41 @@ function Talk.npc(cfg)
     solid = (cfg.solid ~= false),
   })
 
-  -- interaction -> Dialogue.start
+  local BOT_NAME = Net.get_bot_name(bot_id)
+
   Net:on("actor_interaction", function(event)
     if event.actor_id ~= bot_id then return end
 
     local player_id = event.player_id
     if Dialogue.is_active(player_id) then return end
 
-    -- face the player
+    -- Face the player
     local player_pos = Net.get_player_position(player_id)
     Net.set_bot_direction(bot_id, Direction.from_points(bot_pos, player_pos))
 
-    local lines = cfg.lines or cfg.text or { "..." }
-    local ui = build_ui(cfg)
+    -- Custom handler override (advanced users)
+    if type(cfg.on_interact) == "function" then
+      cfg.on_interact(player_id, bot_id, BOT_NAME)
+      return
+    end
 
-    Dialogue.start(player_id, lines, {
-      page_advance = cfg.page_advance or "wait_for_confirm",
-      confirm_during_typing = (cfg.confirm_during_typing ~= false),
-      ui = ui,
-      on_finish = cfg.on_finish,
-    })
+    -- Prompt flow (optional)
+    if cfg.prompt then
+      local p = cfg.prompt
+      Talk.prompt_then_talk(
+        player_id,
+        p.question or "Continue?",
+        p.yes_lines or p.on_yes_lines or { "..." },
+        p.no_lines  or p.on_no_lines  or { "..." },
+        cfg,
+        BOT_NAME
+      )
+      return
+    end
+
+    -- Normal dialogue
+    local lines = cfg.lines or cfg.text or { "..." }
+    Talk.start(player_id, lines, cfg, BOT_NAME)
   end)
 
   return bot_id
