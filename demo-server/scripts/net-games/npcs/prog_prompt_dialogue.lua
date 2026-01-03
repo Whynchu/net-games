@@ -55,7 +55,8 @@ local function basic_prog_ui(box_id)
       align = "left",
       gap_x = 6,
       gap_y = 59,
-
+      dur = 0.20,
+      close_dur = 0.20,
       bob_amp = 1.2,    -- at scale=2, this feels like ~3–4px on screen
       bob_speed = 2 -- slower = calmer
     },

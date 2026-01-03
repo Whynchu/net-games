@@ -356,7 +356,7 @@ function PromptInstance:render_initial()
   local ops = {
     page_advance = "wait_for_confirm",
     auto_advance_seconds = 999999,
-    confirm_during_typing = false,
+    confirm_during_typing = true,
     type_sfx_path = ui.type_sfx_path,
     type_sfx_min_dt = ui.type_sfx_min_dt,
     mugshot = ui.mugshot,
@@ -398,7 +398,6 @@ function PromptInstance:render_cursor()
   selector_draw(player_id, self.cursor_id, cx, cy, ui.z + 2, ui.scale)
 end
 
-
 function PromptInstance:update(dt)
   local player_id = self.player_id
   local st = Displayer.Text.getTextBoxState(player_id, self.box_id)
@@ -410,26 +409,33 @@ function PromptInstance:update(dt)
     bd.backdrop.indicator.enabled = not options_visible_on_current_page(player_id, self.box_id)
   end
 
-  -- Anti-queue: never allow inputs pressed during typing to "land" later
+  -- While typing: allow "hold confirm" to fast-forward (like normal dialogue),
+  -- and ALSO clear the confirm edge so it can't later auto-select YES.
+  if st == "printing" then
+    -- never allow movement keys to queue
+    Input.pop(player_id, "left")
+    Input.pop(player_id, "right")
+    Input.pop(player_id, "up")
+    Input.pop(player_id, "down")
+    Input.pop(player_id, "cancel")
 
-if st == "printing" then
-  -- IMPORTANT: do NOT pop confirm here, or typing-skip can't work.
-  -- Only prevent cursor movement from queuing.
-  Input.pop(player_id, "left")
-  Input.pop(player_id, "right")
-  Input.pop(player_id, "up")
-  Input.pop(player_id, "down")
-  return
-end
+    if Input.is_down(player_id, "confirm") then
+      -- Clear the one-shot edge if it exists (prevents carry-press into YES)
+      Input.pop(player_id, "confirm")
 
+      -- Fast-forward (TextDisplay now stops at next {p_#} pause boundary)
+      Displayer.Text.advance_text_box(player_id, self.box_id)
+    end
 
+    return
+  end
 
   if not self.ready_for_input then
-  -- While options are NOT visible, never allow directional input to queue
-Input.pop(player_id, "left")
-Input.pop(player_id, "right")
-Input.pop(player_id, "up")
-Input.pop(player_id, "down")
+    -- While options are NOT visible, never allow directional input to queue
+    Input.pop(player_id, "left")
+    Input.pop(player_id, "right")
+    Input.pop(player_id, "up")
+    Input.pop(player_id, "down")
 
     -- Become ready ONLY when the options line is actually visible
     if (st == "waiting" or st == "completed") and options_visible_on_current_page(player_id, self.box_id) then
@@ -441,12 +447,12 @@ Input.pop(player_id, "down")
       if Input.is_down(player_id, "right")   then table.insert(held, "right")   end
       if Input.is_down(player_id, "up")      then table.insert(held, "up")      end
       if Input.is_down(player_id, "down")    then table.insert(held, "down")    end
+      if Input.is_down(player_id, "confirm") then table.insert(held, "confirm") end
 
       if #held > 0 then
         Input.consume(player_id)
         Input.require_release(player_id, held)
       end
-
 
       self:render_cursor()
       return
@@ -463,52 +469,47 @@ Input.pop(player_id, "down")
       return
     end
 
-
     -- Cancel does nothing until options are visible (prevents queued cancel)
     Input.pop(player_id, "cancel")
     return
   end
 
   -- READY: left/right toggles selection
--- If options are visible and we're ready, animate the selector cursor (push -> snap loop)
-if self.ready_for_input and options_visible_on_current_page(player_id, self.box_id) then
-  dt = math.min(dt or 0, 1/30)
+  -- If options are visible and we're ready, animate the selector cursor (push -> snap loop)
+  if self.ready_for_input and options_visible_on_current_page(player_id, self.box_id) then
+    dt = math.min(dt or 0, 1/30)
 
-  -- Tune these two for feel:
-  local speed  = 3.8                      -- higher = faster loop
-  local amp    = 2.0 * (self.ui.scale or 1.0)  -- how far it pushes toward the selection
+    -- Tune these two for feel:
+    local speed  = 3.8
+    local amp    = 2.0 * (self.ui.scale or 1.0)
 
-  self.cursor_phase = (self.cursor_phase or 0) + (dt * speed)
+    self.cursor_phase = (self.cursor_phase or 0) + (dt * speed)
 
-  -- 0..1 repeating
-  local t = self.cursor_phase % 1.0
+    -- 0..1 repeating
+    local t = self.cursor_phase % 1.0
 
-  -- Ramp right then snap back:
-  -- Ease-out ramp (fast at start, slows near the end) feels "weighted"
-  local eased = 1.0 - (1.0 - t) * (1.0 - t)   -- easeOutQuad
+    -- Ease-out ramp
+    local eased = 1.0 - (1.0 - t) * (1.0 - t)
+    local push = eased * amp
 
-  local push = eased * amp
-
-  if self.cursor_base_x and self.cursor_base_y then
-    selector_draw(
-      player_id,
-      self.cursor_id,
-      self.cursor_base_x + push,
-      self.cursor_base_y,
-      (self.ui.z or 100) + 2,
-      self.ui.scale or 2.0
-    )
-  end
-end
-
-  
-    if Input.pop(player_id, "left") or Input.pop(player_id, "right") then
-      self.selection = (self.selection == 1) and 2 or 1
-      play_cursor_move_sfx(player_id)
-      self:render_cursor()
-      return
+    if self.cursor_base_x and self.cursor_base_y then
+      selector_draw(
+        player_id,
+        self.cursor_id,
+        self.cursor_base_x + push,
+        self.cursor_base_y,
+        (self.ui.z or 100) + 2,
+        self.ui.scale or 2.0
+      )
     end
+  end
 
+  if Input.pop(player_id, "left") or Input.pop(player_id, "right") then
+    self.selection = (self.selection == 1) and 2 or 1
+    play_cursor_move_sfx(player_id)
+    self:render_cursor()
+    return
+  end
 
   -- Confirm chooses
   if Input.pop(player_id, "confirm") then
@@ -524,6 +525,7 @@ end
     return
   end
 end
+
 
 --========================
 -- Public API

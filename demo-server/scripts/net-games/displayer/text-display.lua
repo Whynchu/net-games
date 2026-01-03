@@ -1284,40 +1284,37 @@ function TextDisplay:updateTextBoxes(delta)
 end
 
 
-
-
 function TextDisplay:updateTextBoxPrinting(player_id, box_id, box_data, delta)
--- If currently pausing, count down and stop.
-box_data._last_delta = delta
+  -- If currently pausing, count down and stop.
+  box_data._last_delta = delta
 
-if box_data.pause_remaining and box_data.pause_remaining > 0 then
-  -- enter pause: force mug to idle once
-  if not box_data._in_pause then
-    box_data._in_pause = true
+  if box_data.pause_remaining and box_data.pause_remaining > 0 then
+    -- enter pause: force mug to idle once
+    if not box_data._in_pause then
+      box_data._in_pause = true
+      if box_data.mugshot and box_data.mugshot.enabled then
+        -- temporarily treat as "not printing speech"
+        local prev = box_data.state
+        box_data.state = "waiting"
+        self:drawTextBoxMugshot(player_id, box_id, box_data)
+        box_data.state = prev
+      end
+    end
+
+    box_data.pause_remaining = box_data.pause_remaining - delta
+    if box_data.pause_remaining > 0 then
+      return
+    end
+
+    -- pause ended
+    box_data.pause_remaining = 0
+    box_data._in_pause = false
+
+    -- resume: restore talk pose once (if we’re still in printing)
     if box_data.mugshot and box_data.mugshot.enabled then
-      -- temporarily treat as "not printing speech"
-      local prev = box_data.state
-      box_data.state = "waiting"
       self:drawTextBoxMugshot(player_id, box_id, box_data)
-      box_data.state = prev
     end
   end
-
-  box_data.pause_remaining = box_data.pause_remaining - delta
-  if box_data.pause_remaining > 0 then
-    return
-  end
-
-  -- pause ended
-  box_data.pause_remaining = 0
-  box_data._in_pause = false
-
-  -- resume: restore talk pose once (if we’re still in printing)
-  if box_data.mugshot and box_data.mugshot.enabled then
-    self:drawTextBoxMugshot(player_id, box_id, box_data)
-  end
-end
-
 
   -- Before printing the next character, see if a pause should trigger
   local printed = get_printed_char_count(box_data)
@@ -1367,31 +1364,75 @@ end
       return
     end
 
-    box_data.current_char = box_data.current_char + 1
+    -- ============================================================
+    -- SPACE-RUN FAST PRINT
+    -- If the next character is a space, and there are 2+ spaces in a row,
+    -- print the whole run immediately (using only ONE char_delay).
+    -- Single spaces still print normally (keeps sentence pacing).
+    -- ============================================================
 
-    if box_data.current_char > #current_line_text then
-      -- next line
+    local next_pos = (box_data.current_char or 0) + 1
+
+    -- If next_pos is past the end of the line, go to next line/page as usual
+    if next_pos > #current_line_text then
       box_data.current_line = box_data.current_line + 1
       box_data.current_char = 0
 
-    if box_data.current_line > #current_page then
-      -- end of page => wait (confirm/auto logic lives in updateTextBoxWaiting)
-      box_data.state = "waiting"
-      box_data.wait_timer = 0
+      if box_data.current_line > #current_page then
+        -- end of page => wait (confirm/auto logic lives in updateTextBoxWaiting)
+        box_data.state = "waiting"
+        box_data.wait_timer = 0
 
-      -- IMPORTANT: mugshot must be redrawn here, otherwise it stays in last anim_state
-      if box_data.mugshot and box_data.mugshot.enabled then
-        self:drawTextBoxMugshot(player_id, box_id, box_data)
+        -- IMPORTANT: mugshot must be redrawn here, otherwise it stays in last anim_state
+        if box_data.mugshot and box_data.mugshot.enabled then
+          self:drawTextBoxMugshot(player_id, box_id, box_data)
+        end
+
+        return
       end
 
-      return
-    end
-
     else
-      self:drawTextBoxCharacter(player_id, box_id, box_data, true)
+      local next_ch = current_line_text:sub(next_pos, next_pos)
+
+      if next_ch == " " then
+        -- count how many consecutive spaces from next_pos forward (same line only)
+        local run_end = next_pos
+        while run_end <= #current_line_text and current_line_text:sub(run_end, run_end) == " " do
+          run_end = run_end + 1
+        end
+        local run_len = run_end - next_pos
+
+        if run_len >= 2 then
+          -- Print the whole run of spaces immediately.
+          -- (We still respect pauses if a pause mark happens to land mid-run.)
+          for j = next_pos, (next_pos + run_len - 1) do
+            printed = get_printed_char_count(box_data)
+            if box_data.pause_marks and box_data.pause_marks[printed] and box_data.pause_marks[printed] > 0 then
+              box_data.pause_remaining = box_data.pause_marks[printed]
+              box_data.pause_marks[printed] = nil
+              return
+            end
+
+            box_data.current_char = j
+            self:drawTextBoxCharacter(player_id, box_id, box_data, true)
+          end
+
+          -- Done: we consumed ONE char_delay total for multiple spaces.
+          -- Next loop iteration prints the next non-space (if timer allows).
+        else
+          -- Single space: behave like normal typing cadence
+          box_data.current_char = next_pos
+          self:drawTextBoxCharacter(player_id, box_id, box_data, true)
+        end
+      else
+        -- Normal character: print one
+        box_data.current_char = next_pos
+        self:drawTextBoxCharacter(player_id, box_id, box_data, true)
+      end
     end
   end
 end
+
 
 
 function TextDisplay:updateTextBoxWaiting(player_id, box_id, box_data, delta)
@@ -1811,43 +1852,75 @@ function TextDisplay:advanceTextBox(player_id, box_id)
 
             self:clearTextBoxDisplay(player_id, box_id, box_data)
         end
+
     elseif box_data.state == "printing" then
         local current_page = box_data.pages[box_data.current_page]
-        -- If there are pending pauses, don't allow "skip to end" to bypass them.
-        -- Instead, treat confirm as "finish current visible chunk" by disabling only the typing delay.
+        if not current_page then return end
+
+        -- If pauses exist, fast-forward ONLY up to the NEXT pause mark (do not bypass it).
+        local printed = get_printed_char_count(box_data)
+        local next_pause = nil
+
         if box_data.pause_marks then
-          local printed = get_printed_char_count(box_data)
-          -- If a pause is scheduled at/after current position, don't fast-forward past it.
           for k, _ in pairs(box_data.pause_marks) do
-            if k >= printed then
-              return
+            if k >= printed and (next_pause == nil or k < next_pause) then
+              next_pause = k
             end
+          end
+
+          -- If we're already exactly at a pause boundary, don't move.
+          -- The pause will trigger naturally in updateTextBoxPrinting.
+          if next_pause ~= nil and next_pause <= printed then
+            return
           end
         end
 
-        if current_page then
-            for line = box_data.current_line, #current_page do
-                local line_text = current_page[line]
-                local start_char = (line == box_data.current_line) and box_data.current_char + 1 or 1
+        -- Helper: print characters forward, stopping at `stop_at_printed` if provided.
+        local function print_forward_until(stop_at_printed)
+          for line = box_data.current_line, #current_page do
+            local line_text = current_page[line]
+            local start_char = (line == box_data.current_line) and (box_data.current_char + 1) or 1
 
-                for char_pos = start_char, #line_text do
-                    box_data.current_line = line
-                    box_data.current_char = char_pos
-                    self:drawTextBoxCharacter(player_id, box_id, box_data, false)
+            for char_pos = start_char, #line_text do
+              box_data.current_line = line
+              box_data.current_char = char_pos
+              self:drawTextBoxCharacter(player_id, box_id, box_data, false)
+
+              if stop_at_printed ~= nil then
+                local now_printed = get_printed_char_count(box_data)
+                if now_printed >= stop_at_printed then
+                  return false -- stopped early (e.g., at a pause boundary)
                 end
+              end
             end
+          end
 
-            box_data.state = "waiting"
-            box_data.wait_timer = 0
-            -- IMPORTANT: skipping finishes the page instantly, so we must
-            -- redraw mugshot once to switch from TALK -> IDLE (without this it can stick)
-            if box_data.mugshot and box_data.mugshot.enabled then
-              self:drawTextBoxMugshot(player_id, box_id, box_data)
-            end
+          return true -- reached end of page
+        end
 
+        -- If there's a pause ahead: stop right at that boundary (stay in "printing").
+        if next_pause ~= nil then
+          local finished_page = print_forward_until(next_pause)
+          -- If we somehow finished the page (pause was beyond it), fall through to waiting.
+          if not finished_page then
+            return
+          end
+        else
+          -- No pause ahead: original behavior = finish the whole page instantly.
+          print_forward_until(nil)
+        end
+
+        -- If we reached here, we're at the end of the page => waiting for confirm to advance.
+        box_data.state = "waiting"
+        box_data.wait_timer = 0
+
+        -- Redraw mugshot once to switch from TALK -> IDLE (prevents sticking)
+        if box_data.mugshot and box_data.mugshot.enabled then
+          self:drawTextBoxMugshot(player_id, box_id, box_data)
         end
     end
 end
+
 
 function TextDisplay:setTextBoxPosition(player_id, box_id, x, y)
     local player_data = self.player_texts[player_id]
