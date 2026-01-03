@@ -598,8 +598,23 @@ function Prompt.close(player_id, reason, opts)
   else
     -- Handoff behavior: keep the textbox UI alive, just swallow input so it doesn't
     -- instantly advance the next Dialogue that reuses this box.
+
+    -- IMPORTANT:
+    -- Prompt hides the textbox "next" indicator while options are visible.
+    -- If we hand off and KEEP the textbox, the prompt stops updating, so the
+    -- indicator can remain stuck OFF for the next dialogue.
+    local bd = Displayer.Text.getTextBoxData(player_id, inst.box_id)
+    if bd and bd.backdrop and bd.backdrop.indicator then
+      bd.backdrop.indicator.enabled = true
+    end
+
     Input.consume(player_id)
+
+-- Clear any sticky "require_release" so the next dialogue doesn't need a dummy press
+Input.clear_require_release(player_id, { "confirm", "cancel" })
+
     Input.swallow(player_id, 0.10)
+
   end
 
   set_input_locked(player_id, false)

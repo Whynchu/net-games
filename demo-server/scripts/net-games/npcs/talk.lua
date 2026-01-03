@@ -46,6 +46,14 @@ local function stable_box_id(cfg)
   return "talk_" .. area .. "_" .. obj
 end
 
+local function force_indicator_on(player_id, box_id)
+  if not (Displayer and Displayer.Text and Displayer.Text.getTextBoxData) then return end
+  local bd = Displayer.Text.getTextBoxData(player_id, box_id)
+  if bd and bd.backdrop and bd.backdrop.indicator then
+    bd.backdrop.indicator.enabled = true
+  end
+end
+
 --=====================================================
 -- build_ui(cfg, bot_name, opts)
 -- opts.mode = "dialogue" | "prompt"
@@ -67,6 +75,8 @@ local function build_ui(cfg, bot_name, opts)
   -- Box (base)
   local box = Presets.boxes[box_key] or Presets.boxes.panel
   deep_merge(ui, shallow_copy(box))
+
+  -- IMPORTANT: keep a real table instance for backdrop (and its nested indicator table)
   ui.backdrop = shallow_copy(box.backdrop)
   deep_merge(ui.backdrop, box.backdrop)
 
@@ -110,12 +120,31 @@ local function build_ui(cfg, bot_name, opts)
   -- Per-NPC overrides (last)
   if cfg.ui then
     deep_merge(ui, cfg.ui)
+
     -- If someone overwrote nameplate, ensure text is still sane unless explicitly set
     if ui.nameplate and ui.nameplate.text == nil then
       ui.nameplate.text = bot_name
     end
-    -- If someone overwrote box_id, keep it
+
+    -- Keep stable id unless explicitly overwritten
     ui.box_id = ui.box_id or stable_box_id(cfg)
+  end
+
+  -- =====================================================
+  -- INDICATOR SAFETY:
+  -- Some configs accidentally replace backdrop without carrying indicator.
+  -- We restore the preset indicator unless the author explicitly disabled it.
+  -- =====================================================
+  if ui.backdrop then
+    local base_ind = box and box.backdrop and box.backdrop.indicator
+
+    if ui.backdrop.indicator == nil and base_ind then
+      ui.backdrop.indicator = shallow_copy(base_ind)
+    end
+
+    if ui.backdrop.indicator and ui.backdrop.indicator.enabled == nil then
+      ui.backdrop.indicator.enabled = true
+    end
   end
 
   return ui
@@ -148,6 +177,11 @@ function Talk.start(player_id, script, cfg, bot_name, extra_opts)
 
   if extra_opts then
     deep_merge(o, extra_opts)
+  end
+
+  -- Ensure indicator is ON if reusing existing box from prompt
+  if o.from_prompt and o.reuse_existing_box and ui and ui.box_id then
+    force_indicator_on(player_id, ui.box_id)
   end
 
   return Dialogue.start(player_id, lines, o)

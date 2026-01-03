@@ -43,6 +43,19 @@ local function now() return os.clock() end
 -- Missing keys in event.events do NOT imply released.
 local NON_DIR_UP_TIMEOUT = 0.06
 
+local function refresh_non_dir_timeout(s)
+  local t = now()
+
+  -- Only for confirm/cancel (non-dir)
+  for _, k in ipairs({ "confirm", "cancel" }) do
+    if s.down[k] and t >= (s.non_dir_down_until[k] or 0) then
+      s.down[k] = false
+      s.non_dir_armed[k] = true
+    end
+  end
+end
+
+
 local function ensure(player_id)
   if not st[player_id] then
     st[player_id] = {
@@ -224,12 +237,14 @@ end
 
 function Input.pop(player_id, key)
   local s = ensure(player_id)
+  refresh_non_dir_timeout(s)
   if s.edge[key] then
     s.edge[key] = nil
     return true
   end
   return false
 end
+
 
 function Input.pressed(player_id, key)
   local s = ensure(player_id)
@@ -238,8 +253,10 @@ end
 
 function Input.is_down(player_id, key)
   local s = ensure(player_id)
+  refresh_non_dir_timeout(s)
   return s.down[key] == true
 end
+
 
 function Input.swallow(player_id, seconds)
   local s = ensure(player_id)
@@ -253,6 +270,21 @@ function Input.require_release(player_id, keys)
     s.require_release[k] = true
   end
 end
+
+function Input.clear_require_release(player_id, keys)
+  local s = ensure(player_id)
+  for _, k in ipairs(keys or {}) do
+    s.require_release[k] = nil
+    s.non_dir_armed[k] = true
+    if s.non_dir_down_until and s.non_dir_down_until[k] ~= nil then
+      s.non_dir_down_until[k] = 0
+    end
+    if s.down and s.down[k] ~= nil then
+      s.down[k] = false
+    end
+  end
+end
+
 
 function Input.debug_dump_last_packet(player_id)
   local s = ensure(player_id)
