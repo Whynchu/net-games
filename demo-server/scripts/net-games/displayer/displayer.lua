@@ -433,6 +433,48 @@ function Displayer:_setupSubAPIs()
         )
     end
 
+    self.Text.resetTextBox = function(player_id, box_id, text, x, y, width, height, font_name, scale, z_order, backdrop_config, speed, opts)
+        local subsystem = mainInstance:_getSubsystem("TextDisplaySystem", "resetTextBox")
+        if not subsystem or not player_id or not box_id or text == nil then
+            print("Error: player_id, box_id and text are required")
+            return nil
+        end
+
+        return subsystem:resetTextBox(
+            player_id,
+            box_id,
+            text,
+            x or 0,
+            y or 0,
+            width or 200,
+            height or 100,
+            font_name or "THICK",
+            scale or 2.0,
+            z_order or 100,
+            backdrop_config,
+            speed or 30,
+            opts or nil
+        )
+    end
+
+    -- snake_case alias
+    if self.Text.resetTextBox and not self.Text.reset_text_box then
+      self.Text.reset_text_box = function(player_id, box_id, text, x, y, width, height, font_name, scale, z_order, backdrop_config, speed, opts)
+        return self.Text.resetTextBox(
+          player_id,
+          box_id,
+          text,
+          x, y, width, height,
+          font_name, scale, z_order,
+          backdrop_config,
+          speed,
+          opts
+        )
+      end
+    end
+
+
+
     self.Text.getTextBoxData = function(player_id, box_id)
         local subsystem = mainInstance:_getSubsystem("TextDisplaySystem", "getTextBoxData")
         return subsystem:getTextBoxData(player_id, box_id)

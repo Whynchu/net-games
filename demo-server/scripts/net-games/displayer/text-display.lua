@@ -638,6 +638,272 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
     return box_id
 end
 
+--=====================================================
+-- Reset Text Box (REUSE existing UI)
+-- Keeps the existing backdrop/nameplate/mugshot objects alive,
+-- clears printed glyphs, rebuilds wrapped pages, and restarts printing.
+--=====================================================
+function TextDisplay:resetTextBox(player_id, box_id, text, x, y, width, height, font_name, scale, z_order, backdrop_config, speed, opts)
+  local player_data = self.player_texts[player_id]
+  if not player_data then return nil end
+
+  local box_data = player_data.active_text_boxes and player_data.active_text_boxes[box_id]
+
+  -- If no existing box, fall back to create (so callers can safely "reset-or-create")
+  if not box_data then
+    return self:createTextBox(player_id, box_id, text, x, y, width, height, font_name, scale, z_order, backdrop_config, speed, opts)
+  end
+
+  font_name = font_name or box_data.font or "THICK"
+  scale     = scale     or box_data.scale or 2.0
+  z_order   = z_order   or box_data.z_order or 100
+  speed     = speed     or box_data.speed or self.text_box_settings.default_speed
+  opts      = opts      or {}
+
+  -- Ensure assets for typing sfx if changed
+  local type_sfx_path   = opts.type_sfx_path or box_data.type_sfx_path
+  local type_sfx_min_dt = opts.type_sfx_min_dt or box_data.type_sfx_min_dt
+  if type_sfx_path then
+    Net.provide_asset_for_player(player_id, type_sfx_path)
+  end
+
+  -- Behaviour options (keep current unless explicitly overridden)
+  local page_advance =
+    (opts.page_advance ~= nil and opts.page_advance)
+    or box_data.page_advance
+    or "auto_advance"
+
+  local auto_advance_seconds =
+    (opts.auto_advance_seconds ~= nil and opts.auto_advance_seconds)
+    or box_data.auto_advance_seconds
+    or 2.0
+
+  local confirm_during_typing =
+    (opts.confirm_during_typing ~= nil and opts.confirm_during_typing)
+    or box_data.confirm_during_typing
+
+  if confirm_during_typing == nil then confirm_during_typing = true end
+
+  -- Keep old geometry unless caller overrides
+  local bx = (x ~= nil and x) or box_data.x or 0
+  local by = (y ~= nil and y) or box_data.y or 0
+  local bw = (width  ~= nil and width)  or box_data.width  or 200
+  local bh = (height ~= nil and height) or box_data.height or 100
+
+  -- Backdrop config: keep the existing one unless caller supplies a new one
+  local actual_backdrop_config = backdrop_config or box_data.backdrop or {
+    x = bx, y = by, width = bw, height = bh,
+    padding_x = 0, padding_y = 0
+  }
+
+  -- Calculate inner bounds (same logic as createTextBox)
+  local padding_x = actual_backdrop_config.padding_x or 0
+  local padding_y = actual_backdrop_config.padding_y or 0
+  local inner_x = actual_backdrop_config.x + padding_x
+  local inner_y = actual_backdrop_config.y + padding_y
+  local inner_width = actual_backdrop_config.width - (padding_x * 2)
+  local inner_height = actual_backdrop_config.height - (padding_y * 2)
+
+  -- Mugshot support (wrap + per-line x offset)
+  local mugshot = opts.mugshot
+  if mugshot == nil then mugshot = box_data.mugshot end
+  if mugshot and mugshot.enabled == nil and mugshot == true then
+    mugshot = { enabled = true }
+  end
+
+  local wrap_opts = nil
+  local mug_layout = nil
+
+  if mugshot and mugshot.enabled then
+    local tmp_box = {
+      mugshot = mugshot,
+      scale = scale,
+      _line_height_px = line_height_px_for(font_name, scale, self.text_box_settings.line_height),
+    }
+    mug_layout = compute_mug_layout(tmp_box)
+
+    if mug_layout and mug_layout.reserve_w > 0 and mug_layout.lines > 0 then
+      local chars_per_pixel = ( ( ( (self.font_system.char_widths[font_name] or self.font_system.char_widths.THICK)["A"] or 6) * scale ) + ((self.text_box_settings.char_spacing or 1) * scale) )
+      local mug_chars = math.floor((mug_layout.reserve_w + mug_layout.gap) / chars_per_pixel)
+
+      wrap_opts = {
+        max_chars_for_line = function(line_idx_in_page, default_limit)
+          if line_idx_in_page <= mug_layout.lines then
+            return math.max(1, default_limit - mug_chars)
+          end
+          return default_limit
+        end
+      }
+    end
+  end
+
+  -- Allow callers to override/extend wrapping behavior
+  if opts and opts.wrap_opts then
+    wrap_opts = wrap_opts or {}
+    for k, v in pairs(opts.wrap_opts) do
+      wrap_opts[k] = v
+    end
+  end
+
+  -- Parse markup into ops (same logic as createTextBox)
+  local ops = parse_markup_ops(text)
+
+  -- Build wrapped_text with pause sentinels (resolved AFTER wrapping)
+  local pause_sentinels = {}
+  local pause_seq = 0
+  local buf = {}
+
+  for _, op in ipairs(ops) do
+    if op.type == "char" then
+      table.insert(buf, op.ch)
+    elseif op.type == "newline" then
+      table.insert(buf, "\n")
+    elseif op.type == "newpage" then
+      table.insert(buf, "\f")
+    elseif op.type == "pause" then
+      pause_seq = pause_seq + 1
+      local prefix = "\127"
+      local id = string.char(pause_seq)
+      table.insert(buf, prefix .. id)
+      pause_sentinels[id] = (pause_sentinels[id] or 0) + (op.seconds or 0)
+    end
+  end
+
+  local wrapped_text = table.concat(buf)
+
+  local max_lines_override = actual_backdrop_config.max_lines
+  local pages = self:wrapTextToPages(wrapped_text, font_name, scale, inner_width, inner_height, max_lines_override, wrap_opts)
+
+  -- Resolve sentinels into pause_marks based on FINAL wrapped pages
+  local pause_marks = {}
+  local printed_count = 0
+
+  for p = 1, #pages do
+    for l = 1, #pages[p] do
+      local line = pages[p][l]
+      local out = {}
+
+      local i = 1
+      while i <= #line do
+        local ch = line:sub(i, i)
+
+        if ch == "\127" then
+          local id = line:sub(i + 1, i + 1)
+          local seconds = pause_sentinels[id]
+          if seconds then
+            pause_marks[printed_count] = (pause_marks[printed_count] or 0) + seconds
+          end
+          i = i + 2
+        else
+          table.insert(out, ch)
+          printed_count = printed_count + 1
+          i = i + 1
+        end
+      end
+
+      pages[p][l] = table.concat(out)
+    end
+  end
+
+  -- Reset printed glyphs (text only). Do NOT erase backdrop or nameplate.
+  self:clearTextBoxDisplay(player_id, box_id, box_data)
+
+  -- If mugshot was removed, erase existing mug sprite
+  if box_data.mug_id and (not mugshot or not mugshot.enabled) then
+    Net.player_erase_sprite(player_id, box_data.mug_id)
+    box_data.mug_id = nil
+  end
+
+  -- Update core data (preserving living sprite ids/backdrop_id)
+  box_data.x = actual_backdrop_config.x
+  box_data.y = actual_backdrop_config.y
+  box_data.width  = actual_backdrop_config.width
+  box_data.height = actual_backdrop_config.height
+
+  box_data.inner_x = inner_x
+  box_data.inner_y = inner_y
+  box_data.inner_width  = inner_width
+  box_data.inner_height = inner_height
+
+  box_data.font  = font_name
+  box_data.scale = scale
+  box_data.z_order = z_order
+  box_data.speed = speed
+  box_data.char_delay = 1.0 / (speed or 30)
+
+  box_data.pages = pages
+  box_data.ops = ops
+
+  box_data.current_page = 1
+  box_data.current_line = 1
+  box_data.current_char = 0
+
+  box_data.timer = 0
+  box_data.wait_timer = 0
+
+  box_data.pause_marks = pause_marks
+  box_data.pause_remaining = 0
+
+  box_data.type_sfx_path   = type_sfx_path
+  box_data.type_sfx_min_dt = type_sfx_min_dt
+  box_data.type_sfx_timer  = 0
+  box_data.type_sfx_count  = 0
+
+  box_data.page_advance = page_advance
+  box_data.auto_advance_seconds = auto_advance_seconds
+  box_data.confirm_during_typing = confirm_during_typing
+
+  box_data.mugshot = mugshot
+  box_data.mug_layout = mug_layout
+  box_data.line_x_offsets = {}
+  box_data._line_height_px = line_height_px_for(font_name, scale, self.text_box_settings.line_height)
+
+  box_data.backdrop = actual_backdrop_config
+  box_data.padding_x = padding_x
+  box_data.padding_y = padding_y
+
+  -- IMPORTANT: reset should NOT re-open animation by default (prevents panel flicker)
+  box_data.open_seconds = 0
+  box_data.open_timer = 0
+  box_data._opening_started = false
+
+  -- Cancel a closing state if we were mid-close
+  box_data.close_timer = 0
+  box_data.state = "printing"
+
+  -- Per-line X offsets for mugshot wrap
+  if mug_layout and mug_layout.reserve_w > 0 and mug_layout.lines > 0 then
+    local offset_px = mug_layout.reserve_w + mug_layout.gap
+    for i = 1, mug_layout.lines do
+      box_data.line_x_offsets[i] = offset_px
+    end
+  end
+
+  -- Nameplate handling:
+  -- - if opts.nameplate == false => remove
+  -- - if opts.nameplate provided => (re)attach
+  if self.nameplate then
+    if opts.nameplate == false then
+      self.nameplate:erase(player_id, player_data, box_data)
+    elseif opts.nameplate ~= nil then
+      self.nameplate:attach(player_id, player_data, box_id, box_data, opts.nameplate)
+    end
+  end
+
+  -- Ensure panel/mug are visible + in correct anim state
+  self:drawTextBoxBackdrop(player_id, box_id, box_data)
+  self:drawTextBoxMugshot(player_id, box_id, box_data)
+
+  if _ng_dbg_enabled() then
+    _ng_dbg(player_id, box_id, "RESET OK",
+      "token=" .. tostring(box_data._dbg_token) ..
+      " state=" .. tostring(box_data.state) ..
+      " pages=" .. tostring(#pages)
+    )
+  end
+
+  return box_id
+end
 
 
 -- Separate backdrop drawing function for text boxes (lazy)

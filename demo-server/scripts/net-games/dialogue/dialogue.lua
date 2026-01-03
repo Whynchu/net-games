@@ -68,7 +68,7 @@ local function default_opts()
     confirm_during_typing = true,
 
     input_mode = C.InputMode.DIALOGUE_OWNS_INPUT,
-    cancel_behavior = "close_dialogue",
+    cancel_behavior = "battle_network",
 
     debug = false,
   }
@@ -152,11 +152,33 @@ local function attach_tick()
           end
           inst.last_state = state
 
-          -- CANCEL
+          -- CANCEL (B)
           if Input.pop(player_id, "cancel") then
-            close_instance(player_id, "cancel")
+            local beh = (inst.opts and inst.opts.cancel_behavior) or "battle_network"
 
-          -- CONFIRM
+            -- Legacy behavior if you explicitly ask for it
+            if beh == "close_dialogue" then
+              close_instance(player_id, "cancel")
+
+            -- Battle Network behavior:
+            -- - while printing: acts like confirm-fast-forward
+            -- - while waiting/completed: does nothing
+            elseif beh == "battle_network" then
+              if state == "printing" then
+                if inst.opts.confirm_during_typing then
+                  Displayer.Text.advance_text_box(player_id, inst.box_id)
+                end
+              else
+                -- waiting/completed: do nothing
+                -- (we already popped it, so it can't queue)
+              end
+
+            -- Fully ignore B if desired
+            elseif beh == "ignore" then
+              -- do nothing
+            end
+
+          -- CONFIRM (A)
           elseif Input.pop(player_id, "confirm") then
             if state == "printing" then
               if inst.opts.confirm_during_typing then
@@ -196,13 +218,12 @@ function Dialogue.prompt_yesno(player_id, opts)
   return Prompt.yesno(player_id, opts)
 end
 
-
 function Dialogue.start(player_id, script, opts)
   ensure_listener()
   attach_tick()
   if _G and _G.NG_TEXTBOX_DEBUG then
-  print("[TBDBG] Dialogue.start player=" .. tostring(player_id) .. " active=" .. tostring(Dialogue.instances[player_id] ~= nil))
-end
+    print("[TBDBG] Dialogue.start player=" .. tostring(player_id) .. " active=" .. tostring(Dialogue.instances[player_id] ~= nil))
+  end
 
   if Dialogue.instances[player_id] then
     close_instance(player_id, "cancel")
@@ -217,12 +238,12 @@ end
     end
   end
 
--- swallow the interaction press so it doesn't instantly advance
--- (but allow callers like prompts to opt out)
-if not o.from_prompt then
-  Input.consume(player_id)
-  Input.swallow(player_id, 0.10)
-end
+  -- swallow the interaction press so it doesn't instantly advance
+  -- (but allow callers like prompts to opt out)
+  if not o.from_prompt then
+    Input.consume(player_id)
+    Input.swallow(player_id, 0.10)
+  end
 
   -- normalize script/pages into one text blob (net-games Displayer handles paging internally)
   local pages = {}
@@ -258,20 +279,16 @@ end
     if ui.type_sfx_path   then o.type_sfx_path = ui.type_sfx_path end
     if ui.type_sfx_min_dt then o.type_sfx_min_dt = ui.type_sfx_min_dt end
 
-
     if ui.backdrop then
       if ui.backdrop.x then
         o.x = ui.backdrop.x + (ui.backdrop.padding_x or 0)
       end
-
       if ui.backdrop.y then
         o.y = ui.backdrop.y + (ui.backdrop.padding_y or 0)
       end
-
       if ui.backdrop.width then
         o.w = ui.backdrop.width - ((ui.backdrop.padding_x or 0) * 2)
       end
-
       if ui.backdrop.height then
         o.h = ui.backdrop.height - ((ui.backdrop.padding_y or 0) * 2)
       end
@@ -279,74 +296,74 @@ end
   end
 
   if o.debug then
-      print("[Dialogue] ui.font=" .. tostring(ui and ui.font) .. " -> o.font=" .. tostring(o.font))
+    print("[Dialogue] ui.font=" .. tostring(ui and ui.font) .. " -> o.font=" .. tostring(o.font))
   end
-
 
   local box_id = mk_box_id(player_id, ui)
   local backdrop = (ui and (ui.backdrop or ui.backdrop_config)) or nil
 
-  -- Create textbox (prefer snake_case wrapper if present, otherwise call createTextBox)
+  -- If requested, reuse an existing box instead of creating a new one
+  local reuse = (o.reuse_existing_box == true)
+  local existing_bd = Displayer.Text.getTextBoxData(player_id, box_id)
+  local can_reuse = reuse and existing_bd ~= nil and existing_bd.marked_for_removal ~= true
+
   local created
-  if Displayer.Text.create_text_box then
-    created = Displayer.Text.create_text_box(
+
+  local ops = {
+    page_advance = o.page_advance,
+    auto_advance_seconds = o.advance_delay,
+    confirm_during_typing = o.confirm_during_typing,
+    type_sfx_path = o.type_sfx_path,
+    type_sfx_min_dt = o.type_sfx_min_dt,
+    mugshot = (ui and ui.mugshot) or nil,
+
+    -- IMPORTANT:
+    -- Passing nameplate during reuse causes Nameplate:attach() to erase + restart the animation.
+    -- So: only set nameplate when we are creating a new textbox.
+    nameplate = nil,
+  }
+
+  if not can_reuse then
+    ops.nameplate = (ui and ui.nameplate) or nil
+  end
+
+
+  if can_reuse and Displayer.Text.reset_text_box then
+    created = Displayer.Text.reset_text_box(
       player_id, box_id, full_text,
       o.x, o.y, o.w, o.h,
       o.font, o.scale, o.z,
       backdrop,
       o.typing_speed,
-      {
-        page_advance = o.page_advance,
-        auto_advance_seconds = o.advance_delay,
-        confirm_during_typing = o.confirm_during_typing,
-        type_sfx_path = o.type_sfx_path,
-        type_sfx_min_dt = o.type_sfx_min_dt,
-
-        mugshot = (ui and ui.mugshot) or nil,
-        nameplate = (ui and ui.nameplate) or nil,
-
-      }
+      ops
     )
   else
-    created = Displayer.Text.createTextBox(
-      player_id, box_id, full_text,
-      o.x, o.y, o.w, o.h,
-      o.font, o.scale, o.z,
-      backdrop,
-      o.typing_speed,
-      {
-        page_advance = o.page_advance,
-        auto_advance_seconds = o.advance_delay,
-        confirm_during_typing = o.confirm_during_typing,
-        type_sfx_path = o.type_sfx_path,
-        type_sfx_min_dt = o.type_sfx_min_dt,
-        mugshot = (ui and ui.mugshot) or nil,
-        nameplate = (ui and ui.nameplate) or nil,
-      }
-    )
+    -- Create textbox (prefer snake_case wrapper if present, otherwise call createTextBox)
+    if Displayer.Text.create_text_box then
+      created = Displayer.Text.create_text_box(
+        player_id, box_id, full_text,
+        o.x, o.y, o.w, o.h,
+        o.font, o.scale, o.z,
+        backdrop,
+        o.typing_speed,
+        ops
+      )
+    else
+      created = Displayer.Text.createTextBox(
+        player_id, box_id, full_text,
+        o.x, o.y, o.w, o.h,
+        o.font, o.scale, o.z,
+        backdrop,
+        o.typing_speed,
+        ops
+      )
+    end
   end
 
   -- SAFETY: If the textbox didn't actually register in TextDisplay,
   -- don't leave the player locked in an invisible dialogue.
-local initial_data  = Displayer.Text.getTextBoxData(player_id, box_id)
-local initial_state = Displayer.Text.getTextBoxState(player_id, box_id)
-
-if initial_data == nil then
-  if o.debug then
-    print("[Dialogue] WARNING: textbox data is nil right after create; closing to avoid softlock")
-  end
-  if o.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
-    set_input_locked(player_id, false)
-  end
-  return nil
-end
-
-
-  if o.debug then
-    print("[Dialogue] createTextBox returned: " .. tostring(created) .. " box_id=" .. tostring(box_id))
-  end
-
-  if not created then
+  local bd = Displayer.Text.getTextBoxData(player_id, box_id)
+  if not bd then
     if o.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
       set_input_locked(player_id, false)
     end
@@ -354,18 +371,21 @@ end
   end
 
   Dialogue.instances[player_id] = {
+    player_id = player_id,
     box_id = box_id,
     opts = o,
-    wait_elapsed = 0,
-    last_state = initial_state,
+    script = script,
+    ui = ui,
+    closing = false,
   }
 
   if o.debug then
-    print("[Dialogue] start ok player=" .. tostring(player_id) .. " box_id=" .. tostring(box_id))
+    print("[Dialogue] start OK player=" .. tostring(player_id) .. " box_id=" .. tostring(box_id) .. " reuse=" .. tostring(can_reuse))
   end
 
   return box_id
 end
+
 
 function Dialogue.close(player_id)
   close_instance(player_id, "cancel")

@@ -519,10 +519,12 @@ function PromptInstance:update(dt)
 
   -- Confirm chooses
   if Input.pop(player_id, "confirm") then
-    Prompt.close(player_id, "confirm")
+    -- keep the textbox alive so Dialogue can reuse it
+    Prompt.close(player_id, "confirm", { keep_textbox = true })
     if self.selection == 1 then self.on_yes() else self.on_no() end
     return
   end
+
 
   -- Cancel behavior (B)
   if Input.pop(player_id, "cancel") then
@@ -550,9 +552,10 @@ function PromptInstance:update(dt)
     end
 
     -- 2nd B (already on No): confirm No
-    Prompt.close(player_id, "cancel_no")
+    Prompt.close(player_id, "cancel_no", { keep_textbox = true })
     self.on_no()
     return
+
   end
 
 end
@@ -579,25 +582,39 @@ function Prompt.yesno(player_id, opts)
   return inst.box_id
 end
 
-function Prompt.close(player_id, reason)
+function Prompt.close(player_id, reason, opts)
   local inst = Prompt.instances[player_id]
   if not inst then return end
 
+  opts = opts or {}
+  local keep = (opts.keep_textbox == true)
+
+  -- Always erase the selector cursor (prompt-owned)
   selector_erase(player_id, inst.cursor_id)
+
+  if not keep then
+    -- Normal behavior: close the textbox UI
     Displayer.Text.closeTextBox(player_id, inst.box_id)
+  else
+    -- Handoff behavior: keep the textbox UI alive, just swallow input so it doesn't
+    -- instantly advance the next Dialogue that reuses this box.
+    Input.consume(player_id)
+    Input.swallow(player_id, 0.10)
+  end
 
   set_input_locked(player_id, false)
 
-  -- Clean exit: avoid carry-press into world/NPC
-  Input.consume(player_id)
+  -- Clean exit
+  if not keep then
+    Input.consume(player_id)
 
-  -- Only require release if the player is ACTUALLY holding a button right now.
-  -- If we always require release, the next dialogue feels like it needs 2 confirms.
-  if Input.is_down(player_id, "confirm") or Input.is_down(player_id, "cancel") then
-    Input.require_release(player_id, { "confirm", "cancel" })
+    if Input.is_down(player_id, "confirm") or Input.is_down(player_id, "cancel") then
+      Input.require_release(player_id, { "confirm", "cancel" })
+    end
   end
 
   Prompt.instances[player_id] = nil
 end
+
 
 return Prompt

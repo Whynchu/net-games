@@ -1,7 +1,8 @@
 --=====================================================
--- prog_prompt_dialogue_2.lua
+-- prog_prompt_dialogue_shared_box.lua
 -- Tiled-spawned NPC that shows a YES/NO prompt,
--- then follows up with Dialogue.start.
+-- then follows up with Dialogue.start,
+-- reusing the same textbox UI (no close/recreate).
 --=====================================================
 
 local Direction = require("scripts/libs/direction")
@@ -9,7 +10,7 @@ local Dialogue  = require("scripts/net-games/dialogue/dialogue")
 
 local DEBUG = false
 local function dbg(msg)
-  if DEBUG then print("[prog_prompt_dialogue_2] " .. tostring(msg)) end
+  if DEBUG then print("[prog_prompt_dialogue_shared_box] " .. tostring(msg)) end
 end
 
 --=====================================================
@@ -19,7 +20,7 @@ local area_id  = "default"
 local obj_name = "ProgPromptDialogue" -- create a Tiled object with this exact name
 
 local bot_pos = Net.get_object_by_name(area_id, obj_name)
-assert(bot_pos, "[prog_prompt_dialogue_2] Missing Tiled object named '" .. obj_name .. "' in area: " .. tostring(area_id))
+assert(bot_pos, "[prog_prompt_dialogue_shared_box] Missing Tiled object named '" .. obj_name .. "' in area: " .. tostring(area_id))
 
 local bot_id = Net.create_bot({
   name = "Prompt Prog.EXE",
@@ -36,6 +37,11 @@ local bot_id = Net.create_bot({
 local BOT_NAME = Net.get_bot_name(bot_id)
 
 dbg("LOADED bot_id=" .. tostring(bot_id))
+
+--=====================================================
+-- Shared box id (prompt and dialogue MUST match this)
+--=====================================================
+local SHARED_BOX_ID = "prog_prompt_shared_box"
 
 --=====================================================
 -- Shared UI base (clone of prog_basic_dialogue.lua settings)
@@ -57,10 +63,9 @@ local function basic_prog_ui(box_id)
       gap_y = 59,
       dur = 0.20,
       close_dur = 0.20,
-      bob_amp = 1.2,    -- at scale=2, this feels like ~3–4px on screen
-      bob_speed = 2 -- slower = calmer
+      bob_amp = 1.2,
+      bob_speed = 2
     },
-
 
     backdrop = {
       close_seconds = 0.25,
@@ -75,10 +80,8 @@ local function basic_prog_ui(box_id)
       padding_y = 4,
       max_lines = 3,
 
-      -- IMPORTANT:
-      -- Leave indicator enabled in UI. Prompt.lua will toggle it dynamically:
-      -- - ON while paging prompt text
-      -- - OFF when Yes/No is visible (selector replaces it)
+      -- Leave indicator enabled in UI.
+      -- Prompt.lua toggles it dynamically when Yes/No selector is visible.
       indicator = {
         enabled = true,
         width = 2,
@@ -91,7 +94,6 @@ local function basic_prog_ui(box_id)
       },
     },
 
-    -- Keep mugshot consistent with prog_basic
     mugshot = {
       enabled = true,
       texture_path = "/server/assets/ow/prog/prog_mug.png",
@@ -112,16 +114,15 @@ local function basic_prog_ui(box_id)
 end
 
 -- Two helpers so you can tweak prompt vs dialogue later without collateral damage
-local function prog_ui_prompt(box_id)
-  local ui = basic_prog_ui(box_id)
-  -- keep indicator enabled here; prompt.lua will flip it depending on page
+-- NOTE: both return the SAME box_id now, so prompt and dialogue reuse the textbox.
+local function prog_ui_prompt()
+  local ui = basic_prog_ui(SHARED_BOX_ID)
   ui.backdrop.indicator.enabled = true
   return ui
 end
 
-local function prog_ui_dialogue(box_id)
-  local ui = basic_prog_ui(box_id)
-  -- normal dialogue should always show the indicator when waiting
+local function prog_ui_dialogue()
+  local ui = basic_prog_ui(SHARED_BOX_ID)
   ui.backdrop.indicator.enabled = true
   return ui
 end
@@ -134,7 +135,6 @@ Net:on("actor_interaction", function(event)
 
   local player_id = event.player_id
   if Dialogue.is_active(player_id) then
-    -- already in dialogue/prompt; ignore retriggers
     return
   end
 
@@ -145,17 +145,22 @@ Net:on("actor_interaction", function(event)
   Dialogue.prompt_yesno(player_id, {
     question = "Like what you see?",
     cancel_behavior = "select_no",
-    ui = prog_ui_prompt("prog_prompt_yesno_box"),
+
+    -- Prompt opens the textbox using SHARED_BOX_ID
+    ui = prog_ui_prompt(),
 
     on_yes = function()
       Dialogue.start(player_id, {
         "GLAD TO HEAR IT! {p_2}",
         "I've got so much more in store!",
       }, {
-        from_prompt = true, -- prevents the double-confirm after prompt
+        from_prompt = true,
+        reuse_existing_box = true, -- IMPORTANT: do reset, not create
         page_advance = "wait_for_confirm",
         confirm_during_typing = true,
-        ui = prog_ui_dialogue("prog_prompt_followup_box"),
+
+        -- Dialogue reuses the same SHARED_BOX_ID textbox
+        ui = prog_ui_dialogue(),
       })
     end,
 
@@ -164,10 +169,11 @@ Net:on("actor_interaction", function(event)
         "Awh man. :(",
         "I can understand why though. This can be quite buggy!!!",
       }, {
-        from_prompt = true, -- prevents the double-confirm after prompt
+        from_prompt = true,
+        reuse_existing_box = true, -- IMPORTANT: do reset, not create
         page_advance = "wait_for_confirm",
         confirm_during_typing = true,
-        ui = prog_ui_dialogue("prog_prompt_no_box"),
+        ui = prog_ui_dialogue(),
       })
     end,
 
