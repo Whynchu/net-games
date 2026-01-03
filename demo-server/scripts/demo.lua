@@ -171,6 +171,8 @@ Net:on("cursor_selection", function(event)
         games.remove_text("megaman_label",event.player_id)
         games.remove_text("protoman_label",event.player_id)
         games.remove_cursor("navi_changer",event.player_id)
+        Net.unlock_player_input(event.player_id)
+
         local texture = ""
         local animation = ""
         if event.selection == "protoman" then
@@ -212,7 +214,7 @@ Net:on("actor_interaction", function (event)
 
         games.spawn_cursor("navi_changer",event.player_id,cursor_options)
         games.draw_text("roll_label",event.player_id,"<Roll_EXE>",40,40,100,"BATTLE")
-        games.draw_text("megaman_label",event.player_id,"Megaman.EXE",40,60,100,"THICK")
+        games.draw_text("megaman_label",event.player_id,"Megaman_EXE",40,60,100,"BATTLE")
         games.draw_text("protoman_label",event.player_id,"<PROTOMAN_EXE>",40,80,100,"BATTLE")
 
     end 

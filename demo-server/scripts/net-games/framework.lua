@@ -172,12 +172,6 @@ Net:on("player_join", function(event)
 
 end)
 
---=====================================================
--- Frozen player support (used by Simon Says + other games)
---=====================================================
-
-local frozen_players = frozen_players or {}
-
 -- Try a handful of possible EO/Net APIs to move a player without hard-crashing
 local function try_move_player(player_id, area_id, x, y, z)
   -- 1) transfer_player(player_id, area_id, x, y, z)
@@ -239,56 +233,6 @@ local function try_animate_player(player_id, anim_state)
   return false
 end
 
--- Optional: resolve a "Stasis" point. We support either:
---  - a Tiled object named "Stasis"
---  - OR just do nothing (lock-only) if not found
-local function find_stasis(area_id)
-  local ok, obj = pcall(function()
-    return Net.get_object_by_name(area_id, "Stasis")
-  end)
-  if ok and obj and obj.x and obj.y then
-    return obj.x, obj.y, (obj.z or 0)
-  end
-  return nil
-end
-
--- Freeze = lock input + optionally move to stasis (so the player can’t walk away)
-function frame.freeze_player(player_id)
-  if frozen_players[player_id] then return end
-
-  local area_id = Net.get_player_area(player_id)
-  local pos = Net.get_player_position(player_id)
-
-  frozen_players[player_id] = {
-    area_id = area_id,
-    x = pos.x, y = pos.y, z = pos.z
-  }
-
-  -- This is the important part for "virtual_input" based minigames
-  Net.lock_player_input(player_id)
-
-  -- If you have a Stasis object, park them there while frozen
-  local sx, sy, sz = find_stasis(area_id)
-  if sx and sy then
-    try_move_player(player_id, area_id, sx, sy, sz)
-  end
-end
-
--- Unfreeze = restore position + unlock input
-function frame.unfreeze_player(player_id)
-  local data = frozen_players[player_id]
-  if not data then
-    -- still ensure input is freed if someone got desynced
-    if Net.unlock_player_input then Net.unlock_player_input(player_id) end
-    return
-  end
-
-  -- restore where they were when freeze_player happened
-  try_move_player(player_id, data.area_id, data.x, data.y, data.z)
-
-  frozen_players[player_id] = nil
-  Net.unlock_player_input(player_id)
-end
 
 -- Move the frozen player (Simon Says uses this after fading to black)
 function frame.move_frozen_player(player_id, x, y, z)
@@ -360,7 +304,10 @@ function frame.set_cosmetic(cosmetic_id,player_id,texture,animation,state,x,y,vi
     if not last_position_cache[player_id] then
         last_position_cache[player_id] = {}
     end 
-    local area_id = last_position_cache[player_id]["area"]
+local area_id =
+  last_position_cache[player_id]["area"]
+  or Net.get_player_area(player_id)
+
     local position = Net.get_player_position(player_id)
     local xoffset,yoffset = convertOffsets(x*-1,y*-1,position.z+3)
     local xoffset,yoffset = fixOffsets(xoffset,yoffset)
@@ -398,7 +345,11 @@ end
 function frame.add_map_element(name,player_id,texture,animation,animation_state,X,Y,Z,exclude)
     
     --spawn map object
-    local area_id = last_position_cache[player_id]["area"]
+    
+local area_id =
+  (last_position_cache[player_id] and last_position_cache[player_id]["area"])
+  or Net.get_player_area(player_id)
+
     Net.create_bot(player_id.."-map-"..name, { area_id=area_id, warp_in=false, texture_path=texture, animation_path=animation, animation=animation_state,x=X, y=Y, z=Z, solid=false})
 
     if exclude == true then
@@ -427,8 +378,12 @@ function frame.change_map_element(name,player_id,animation_state,loop)
 end
 
 function frame.move_map_element(name,player_id,X,Y,Z)
-    local area_id = last_position_cache[player_id]["area"]
-    Net.transfer_bot(player_id.."-map-"..name, area_id, false, X, Y, Z)
+local area_id =
+  (last_position_cache[player_id] and last_position_cache[player_id]["area"])
+  or Net.get_player_area(player_id)
+
+Net.transfer_bot(player_id.."-map-"..name, area_id, false, X, Y, Z)
+
 end
 
 --purpose: removes UI element from screen

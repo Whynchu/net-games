@@ -68,7 +68,7 @@ Net:on("actor_interaction", function(event)
       font = "THIN_BLACK",
       scale = 2.0,
       z = 100,
-      typing_speed = 30,
+      typing_speed = 12,
       type_sfx_path = "/server/assets/net-games/sfx/text.ogg",
       type_sfx_min_dt = 0.05,
 
