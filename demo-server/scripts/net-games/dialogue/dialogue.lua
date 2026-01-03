@@ -87,31 +87,35 @@ local function mk_box_id(player_id, ui)
   return "ng_dialogue_" .. tostring(player_id)
 end
 
-
 local function close_instance(player_id, reason)
   local inst = Dialogue.instances[player_id]
   if not inst then return end
 
+  -- If we're already closing, don't spam close calls.
+  if inst.closing then
+    return
+  end
+
+  inst.closing = true
+  inst.close_reason = reason
+
   if inst.box_id then
-   Displayer.Text.closeTextBox(player_id, inst.box_id, {
-  caller = "Dialogue.close_instance",
-  reason = reason,
-})
-
+    Displayer.Text.closeTextBox(player_id, inst.box_id, {
+      caller = "Dialogue.close_instance",
+      reason = reason,
+    })
   end
 
-  if inst.opts and inst.opts.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
-    set_input_locked(player_id, false)
-  end
+  -- IMPORTANT:
+  -- Do NOT unlock input here. We keep the player locked until the textbox is fully removed.
+  -- That prevents mash-A reopens during the closing animation.
 
-    -- swallow to prevent carry-press closes / reopens
-    Input.consume(player_id)
-    Input.swallow(player_id, 0.10)
-
-  Dialogue.instances[player_id] = nil
+  -- swallow to prevent carry-press closes / reopens
+  Input.consume(player_id)
+  Input.swallow(player_id, 0.10)
 
   if inst.opts and inst.opts.debug then
-    print("[Dialogue] close player=" .. tostring(player_id) .. " reason=" .. tostring(reason))
+    print("[Dialogue] begin-close player=" .. tostring(player_id) .. " reason=" .. tostring(reason))
   end
 end
 
@@ -119,33 +123,41 @@ local function attach_tick()
   if Dialogue._tick_attached then return end
   Dialogue._tick_attached = true
 
-      Net:on("tick", function(event)
-      for player_id, inst in pairs(Dialogue.instances) do
-        local state = Displayer.Text.getTextBoxState(player_id, inst.box_id)
+  Net:on("tick", function(event)
+    for player_id, inst in pairs(Dialogue.instances) do
+      -- IMPORTANT:
+      -- getTextBoxState() returns "completed" even if the box no longer exists.
+      -- getTextBoxData() is the true existence check.
+      local bd = Displayer.Text.getTextBoxData(player_id, inst.box_id)
+      local state = Displayer.Text.getTextBoxState(player_id, inst.box_id)
 
-        if not state then
-          close_instance(player_id, "finish")
+      -- Textbox is fully gone ? NOW unlock input and clear instance
+      if not bd then
+        if inst.opts and inst.opts.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
+          set_input_locked(player_id, false)
+        end
+        Dialogue.instances[player_id] = nil
+
+      else
+        -- While closing animation is running, eat all input
+        if inst.closing then
+          Input.consume(player_id)
+          Input.swallow(player_id, 0.05)
+
         else
-          -- Prevent confirm-carry when transitioning into WAITING
+          -- Prevent confirm carry when entering WAITING
           if state == "waiting" and inst.last_state ~= "waiting" then
             Input.consume(player_id)
             Input.swallow(player_id, 0.08)
           end
           inst.last_state = state
 
-          -- CANCEL: actually do something (right now your code does nothing)
+          -- CANCEL
           if Input.pop(player_id, "cancel") then
-            if inst.opts and inst.opts.debug then
-              print("[Dialogue] CANCEL edge player=" .. tostring(player_id))
-            end
             close_instance(player_id, "cancel")
 
           -- CONFIRM
           elseif Input.pop(player_id, "confirm") then
-            if inst.opts and inst.opts.debug then
-              print("[Dialogue] CONFIRM edge player=" .. tostring(player_id) .. " state=" .. tostring(state))
-            end
-
             if state == "printing" then
               if inst.opts.confirm_during_typing then
                 Displayer.Text.advance_text_box(player_id, inst.box_id)
@@ -153,8 +165,11 @@ local function attach_tick()
 
             elseif state == "waiting" then
               Displayer.Text.advance_text_box(player_id, inst.box_id)
-              local new_state = Displayer.Text.getTextBoxState(player_id, inst.box_id)
-              if new_state == "completed" or new_state == nil then
+
+              -- If advancing caused removal or completion, begin close
+              local bd2 = Displayer.Text.getTextBoxData(player_id, inst.box_id)
+              local st2 = Displayer.Text.getTextBoxState(player_id, inst.box_id)
+              if not bd2 or st2 == "completed" then
                 close_instance(player_id, "finish")
               end
 
@@ -164,8 +179,10 @@ local function attach_tick()
           end
         end
       end
-   end)
+    end
+  end)
 end
+
 
 --=====================================================
 -- Public API
@@ -311,16 +328,19 @@ end
 
   -- SAFETY: If the textbox didn't actually register in TextDisplay,
   -- don't leave the player locked in an invisible dialogue.
-  local initial_state = Displayer.Text.getTextBoxState(player_id, box_id)
-  if initial_state == nil then
-    if o.debug then
-      print("[Dialogue] WARNING: textbox state is nil right after create; closing to avoid softlock")
-    end
-    if o.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
-      set_input_locked(player_id, false)
-    end
-    return nil
+local initial_data  = Displayer.Text.getTextBoxData(player_id, box_id)
+local initial_state = Displayer.Text.getTextBoxState(player_id, box_id)
+
+if initial_data == nil then
+  if o.debug then
+    print("[Dialogue] WARNING: textbox data is nil right after create; closing to avoid softlock")
   end
+  if o.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
+    set_input_locked(player_id, false)
+  end
+  return nil
+end
+
 
   if o.debug then
     print("[Dialogue] createTextBox returned: " .. tostring(created) .. " box_id=" .. tostring(box_id))
