@@ -276,10 +276,24 @@ function PromptInstance:render_initial()
   local ui = self.ui
   local player_id = self.player_id
 
-  -- PASS 1: render question-only to let TextDisplay wrap for this geometry
-  local question_only = tostring(self.question or "Continue?")
+  -- Helper: shallow copy so we can safely override open/close seconds for the temp wrap box
+  local function copy_table(t)
+    local o = {}
+    for k, v in pairs(t or {}) do o[k] = v end
+    return o
+  end
 
-  Displayer.Text.removeTextBox(player_id, self.box_id)
+  -- PASS 1: render question-only into a TEMP box_id to let TextDisplay wrap for this geometry
+  local question_only = tostring(self.question or "Continue?")
+  local tmp_box_id = self.box_id .. "__wraptmp"
+
+  -- Kill any leftover temp box from a prior run (only affects temp)
+  Displayer.Text.removeTextBox(player_id, tmp_box_id)
+
+  -- IMPORTANT: temp box should NOT animate (prevents open flicker during wrap-measure)
+  local tmp_backdrop = copy_table(ui.backdrop)
+  tmp_backdrop.open_seconds = 0
+  tmp_backdrop.close_seconds = 0
 
   local tmp_ops = {
     page_advance = "auto_advance",
@@ -289,29 +303,33 @@ function PromptInstance:render_initial()
     type_sfx_min_dt = ui.type_sfx_min_dt,
     mugshot = ui.mugshot,
     wrap_opts = { allow_leading_spaces = true },
+
+    -- also force no open wait from opts (TextDisplay reads opts.open_seconds first)
+    open_seconds = 0,
+    close_seconds = 0,
   }
 
   if Displayer.Text.create_text_box then
     Displayer.Text.create_text_box(
-      player_id, self.box_id, question_only,
+      player_id, tmp_box_id, question_only,
       ui.x, ui.y, ui.w, ui.h,
       ui.font, ui.scale, ui.z,
-      ui.backdrop,
+      tmp_backdrop,
       ui.typing_speed,
       tmp_ops
     )
   else
     Displayer.Text.createTextBox(
-      player_id, self.box_id, question_only,
+      player_id, tmp_box_id, question_only,
       ui.x, ui.y, ui.w, ui.h,
       ui.font, ui.scale, ui.z,
-      ui.backdrop,
+      tmp_backdrop,
       ui.typing_speed,
       tmp_ops
     )
   end
 
-  local bd = Displayer.Text.getTextBoxData(player_id, self.box_id)
+  local bd = Displayer.Text.getTextBoxData(player_id, tmp_box_id)
 
   local q_lines = {}
   if bd and bd.pages then
@@ -330,9 +348,11 @@ function PromptInstance:render_initial()
 
   local text = build_yesno_text_from_wrapped(q_lines, max_lines)
 
-  -- PASS 2: create the real prompt box
-  Displayer.Text.removeTextBox(player_id, self.box_id)
+  -- Remove the TEMP box only (never touch the real prompt box yet)
+  Displayer.Text.removeTextBox(player_id, tmp_box_id)
 
+  -- PASS 2: create the real prompt box ONCE (this is the one the player sees)
+  -- If you want open animation here, it should come from ui.backdrop.open_seconds
   local ops = {
     page_advance = "wait_for_confirm",
     auto_advance_seconds = 999999,
@@ -364,6 +384,7 @@ function PromptInstance:render_initial()
     )
   end
 end
+
 
 function PromptInstance:render_cursor()
   local ui = self.ui

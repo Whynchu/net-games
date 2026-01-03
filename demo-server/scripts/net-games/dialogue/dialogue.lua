@@ -93,7 +93,11 @@ local function close_instance(player_id, reason)
   if not inst then return end
 
   if inst.box_id then
-    Displayer.Text.closeTextBox(player_id, inst.box_id)
+   Displayer.Text.closeTextBox(player_id, inst.box_id, {
+  caller = "Dialogue.close_instance",
+  reason = reason,
+})
+
   end
 
   if inst.opts and inst.opts.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
@@ -179,6 +183,9 @@ end
 function Dialogue.start(player_id, script, opts)
   ensure_listener()
   attach_tick()
+  if _G and _G.NG_TEXTBOX_DEBUG then
+  print("[TBDBG] Dialogue.start player=" .. tostring(player_id) .. " active=" .. tostring(Dialogue.instances[player_id] ~= nil))
+end
 
   if Dialogue.instances[player_id] then
     close_instance(player_id, "cancel")

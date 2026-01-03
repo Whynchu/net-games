@@ -12,6 +12,54 @@ TextDisplay.__index = TextDisplay
 
 local Nameplate = require("scripts/net-games/displayer/nameplate")
 
+-- ===== TextBox Debug =====
+local TBDBG = true
+local function tbdbg(box_data, player_id, box_id, msg)
+  if not TBDBG then return end
+  local t = os.clock()
+  local tok = box_data and box_data._dbg_token or "no-token"
+  print(string.format("[TBDBG t=%.3f p=%s box=%s tok=%s] %s",
+    t, tostring(player_id), tostring(box_id), tostring(tok), tostring(msg)))
+end
+
+local function stacktag()
+  -- cheap-ish: gives you a callsite without spamming a full traceback
+  local info = debug.getinfo(3, "Sl")
+  if not info then return "unknown" end
+  return tostring(info.short_src) .. ":" .. tostring(info.currentline)
+end
+
+
+
+-- =====================================================
+-- DEBUG: Textbox lifecycle instrumentation
+-- =====================================================
+local function _ng_dbg_enabled()
+  return _G and _G.NG_TEXTBOX_DEBUG == true
+end
+
+local function _ng_dbg_trace()
+  return _G and _G.NG_TEXTBOX_DEBUG_TRACE == true
+end
+
+local function _ng_now()
+  -- os.clock() is monotonic-ish and good for sequencing
+  return os.clock()
+end
+
+local function _ng_dbg(player_id, box_id, msg, extra)
+  if not _ng_dbg_enabled() then return end
+  local t = string.format("%.3f", _ng_now())
+  local prefix = "[TBDBG t=" .. t .. " p=" .. tostring(player_id) .. " box=" .. tostring(box_id) .. "] "
+  print(prefix .. tostring(msg))
+  if extra then
+    print(prefix .. tostring(extra))
+  end
+  if _ng_dbg_trace() then
+    print(prefix .. debug.traceback("", 2))
+  end
+end
+
 
 -- Normalize "loops" option:
 -- nil/true  => infinite (default)
@@ -333,7 +381,6 @@ end
 --=====================================================
 -- Text Box System
 --=====================================================
-
 function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height, font_name, scale, z_order, backdrop_config, speed, opts)
     font_name = font_name or "THICK"
     scale = scale or 2.0
@@ -353,8 +400,33 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
     local auto_advance_seconds = opts.auto_advance_seconds or 2.0
     local confirm_during_typing = (opts.confirm_during_typing ~= false)
 
-    local player_data = self.player_texts[player_id]
+        local player_data = self.player_texts[player_id]
     if not player_data then return nil end
+
+    -- =====================================================
+    -- SAFETY + DEBUG:
+    -- If something calls createTextBox twice for the same box_id before the first one is removed,
+    -- DO NOT hard-delete/recreate. That causes OPEN/CLOSE flicker once you add animations.
+    -- Instead: ignore the duplicate create, and print a traceback so we can find the caller.
+    -- =====================================================
+    local existing = player_data.active_text_boxes and player_data.active_text_boxes[box_id]
+    if existing and not existing.marked_for_removal then
+      -- Only print the traceback once per living box to avoid log spam
+      if not existing._dbg_reported_create_collision then
+        existing._dbg_reported_create_collision = true
+
+        _ng_dbg(player_id, box_id,
+          "CREATE COLLISION (ignored duplicate createTextBox)",
+          "existing.state=" .. tostring(existing.state) ..
+          " existing.token=" .. tostring(existing._dbg_token) ..
+          " existing.created_at=" .. tostring(existing._dbg_created_at),
+          "trace=" .. tostring(debug.traceback("", 2))
+        )
+      end
+
+      return box_id
+    end
+
 
     -- Use backdrop config if provided, otherwise create default
     local actual_backdrop_config = backdrop_config or {
@@ -370,10 +442,9 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
     local inner_width = actual_backdrop_config.width - (padding_x * 2)
     local inner_height = actual_backdrop_config.height - (padding_y * 2)
 
-        -- Mugshot support (wrap + per-line x offset)
+    -- Mugshot support (wrap + per-line x offset)
     local mugshot = opts.mugshot or nil
     if mugshot and mugshot.enabled == nil and mugshot == true then
-      -- allow opts.mugshot = true style
       mugshot = { enabled = true }
     end
 
@@ -381,8 +452,6 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
     local mug_layout = nil
 
     if mugshot and mugshot.enabled then
-      -- Store into box data later, but compute now for wrapping
-      -- We'll temporarily build a tiny struct for computation
       local tmp_box = {
         mugshot = mugshot,
         scale = scale,
@@ -402,23 +471,18 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
             return default_limit
           end
         }
-
       end
     end
 
     -- Allow callers to override/extend wrapping behavior (ex: prompts)
-if opts and opts.wrap_opts then
-  wrap_opts = wrap_opts or {}
-  for k, v in pairs(opts.wrap_opts) do
-    wrap_opts[k] = v
-  end
-end
+    if opts and opts.wrap_opts then
+      wrap_opts = wrap_opts or {}
+      for k, v in pairs(opts.wrap_opts) do
+        wrap_opts[k] = v
+      end
+    end
 
-
-
-
-
-     -- Parse markup into ops
+    -- Parse markup into ops
     local ops = parse_markup_ops(text)
 
     -- Build wrapped_text with pause sentinels (resolved AFTER wrapping)
@@ -429,13 +493,10 @@ end
     for _, op in ipairs(ops) do
       if op.type == "char" then
         table.insert(buf, op.ch)
-
       elseif op.type == "newline" then
         table.insert(buf, "\n")
-
       elseif op.type == "newpage" then
         table.insert(buf, "\f")
-
       elseif op.type == "pause" then
         pause_seq = pause_seq + 1
         local prefix = "\127"              -- DEL
@@ -485,11 +546,19 @@ end
     -- Calculate character delay based on speed (characters per second)
     local char_delay = 1.0 / speed
 
+    -- OPEN animation control:
+    local open_seconds =
+      tonumber(opts.open_seconds) or
+      tonumber(actual_backdrop_config.open_seconds) or
+      0
+
+    local initial_state = (open_seconds > 0) and "opening" or "printing"
+
     local text_box_data = {
         type = "text_box",
         box_id = box_id,
-        x = actual_backdrop_config.x, -- Use backdrop x as reference
-        y = actual_backdrop_config.y, -- Use backdrop y as reference
+        x = actual_backdrop_config.x,
+        y = actual_backdrop_config.y,
         width = actual_backdrop_config.width,
         height = actual_backdrop_config.height,
         inner_x = inner_x,
@@ -514,7 +583,7 @@ end
         mug_layout = mug_layout,
         line_x_offsets = {},
         _line_height_px = line_height_px_for(font_name, scale, self.text_box_settings.line_height),
-        backdrop = actual_backdrop_config, -- Store the actual backdrop config
+        backdrop = actual_backdrop_config,
         backdrop_id = nil,
         _backdrop_allocated = false,
         type_sfx_path   = type_sfx_path,
@@ -524,13 +593,23 @@ end
         page_advance = page_advance,
         auto_advance_seconds = auto_advance_seconds,
         confirm_during_typing = confirm_during_typing,
-        state = "printing", -- printing, waiting, completed
+
+        -- OPEN animation bookkeeping
+        open_seconds = open_seconds,
+        open_timer = 0,
+        _opening_started = false,
+
+        state = initial_state,
         wait_timer = 0,
         padding_x = padding_x,
         padding_y = padding_y
     }
 
-    -- Build per-line X offsets so rendering matches the reduced wrap width
+    -- Debug identity + lifetime (restores the “lived” usefulness)
+    text_box_data._dbg_created_at = _ng_now()
+    text_box_data._dbg_token = tostring(box_id) .. "#" .. tostring(math.floor(text_box_data._dbg_created_at * 1000))
+
+    -- Build per-line X offsets so rendering matches reduced wrap width
     if mug_layout and mug_layout.reserve_w > 0 and mug_layout.lines > 0 then
       local offset_px = mug_layout.reserve_w + mug_layout.gap
       for i = 1, mug_layout.lines do
@@ -538,21 +617,28 @@ end
       end
     end
 
+    -- IMPORTANT:
+    -- If we're opening, DO NOT draw panel here. Drawing here + drawing on opening-enter causes OPEN to be sent twice.
+    if initial_state ~= "opening" then
+      self:drawTextBoxBackdrop(player_id, box_id, text_box_data)
+      self:drawTextBoxMugshot(player_id, box_id, text_box_data)
+    end
 
-    -- Draw backdrop (safe no-op if no backdrop texture configured)
-    self:drawTextBoxBackdrop(player_id, box_id, text_box_data)
-    self:drawTextBoxMugshot(player_id, box_id, text_box_data)
     -- Optional BN nameplate
--- Optional BN nameplate
-if self.nameplate and opts and opts.nameplate then
-  self.nameplate:attach(player_id, player_data, box_id, text_box_data, opts.nameplate)
-
-end
-
+    if self.nameplate and opts and opts.nameplate then
+      self.nameplate:attach(player_id, player_data, box_id, text_box_data, opts.nameplate)
+    end
 
     player_data.active_text_boxes[box_id] = text_box_data
+
+    if _ng_dbg_enabled() then
+      _ng_dbg(player_id, box_id, "CREATE OK", "token=" .. tostring(text_box_data._dbg_token) .. " state=" .. tostring(text_box_data.state) .. " pages=" .. tostring(#pages))
+    end
+
     return box_id
 end
+
+
 
 -- Separate backdrop drawing function for text boxes (lazy)
 function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
@@ -566,8 +652,6 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
     -- IMPORTANT: must run BEFORE the early-return that checks self.backdrop_sprite
     -- =====================================================
     if style == "textbox_panel" then
-
-
         local sprite_id = 5201
         local tex  = "/server/assets/net-games/displayer/textbox.png"
         local anim = "/server/assets/net-games/displayer/textbox.animation"
@@ -597,14 +681,32 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
           oy = tonumber(box_data.backdrop.render_offset_y) or 0
         end
 
-        local desired = (box_data.state == "closing") and "CLOSE" or "OPEN_IDLE"
+        -- NEW: support OPEN state (one-shot via edge trigger)
+        local desired
+        if box_data.state == "closing" then
+          desired = "CLOSE"
+        elseif box_data.state == "opening" then
+          desired = "OPEN"
+        else
+          desired = "OPEN_IDLE"
+        end
 
         -- Only send anim_state when it CHANGES (prevents restart/stuck)
         local anim_to_send = nil
+
         if box_data._panel_last_anim_state ~= desired then
           anim_to_send = desired
           box_data._panel_last_anim_state = desired
+
+          if _ng_dbg_enabled() then
+            _ng_dbg(player_id, box_id, "PANEL anim_state SENT => " .. tostring(desired),
+              "tb_state=" .. tostring(box_data.state) ..
+              " open_timer=" .. tostring(box_data.open_timer) ..
+              " close_timer=" .. tostring(box_data.close_timer)
+            )
+          end
         end
+
 
         local draw = {
           id = backdrop_id,
@@ -618,7 +720,6 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
           draw.anim_state = anim_to_send
         end
 
-
         -- APPLY OPTIONAL TINT (this is the "tint hook")
         local tint = box_data.backdrop
         if tint then
@@ -630,9 +731,6 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
         end
 
         Net.player_draw_sprite(player_id, sprite_id, draw)
-
-
-
         box_data.backdrop_id = backdrop_id
         return
     end
@@ -668,28 +766,34 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
       local x = box_data.x + ox
       local y = box_data.y + oy
 
-      local desired = (box_data.state == "closing") and "CLOSE" or "OPEN_IDLE"
+      -- NEW: support OPEN state (one-shot via edge trigger)
+      local desired
+      if box_data.state == "closing" then
+        desired = "CLOSE"
+      elseif box_data.state == "opening" then
+        desired = "OPEN"
+      else
+        desired = "OPEN_IDLE"
+      end
 
-        local anim_to_send = nil
-        if box_data._panel_last_anim_state ~= desired then
-          anim_to_send = desired
-          box_data._panel_last_anim_state = desired
-        end
-
+      local anim_to_send = nil
+      if box_data._panel_last_anim_state ~= desired then
+        anim_to_send = desired
+        box_data._panel_last_anim_state = desired
+      end
 
       local base_id = box_id .. "_backdrop"
-        local base_draw = {
-          id = base_id,
-          x = x, y = y,
-          z = z,
-          sx = s, sy = s,
-        }
-        if anim_to_send then
-          base_draw.anim_state = anim_to_send
-        end
-        Net.player_draw_sprite(player_id, base_sprite_id, base_draw)
-        box_data.backdrop_id = base_id
-
+      local base_draw = {
+        id = base_id,
+        x = x, y = y,
+        z = z,
+        sx = s, sy = s,
+      }
+      if anim_to_send then
+        base_draw.anim_state = anim_to_send
+      end
+      Net.player_draw_sprite(player_id, base_sprite_id, base_draw)
+      box_data.backdrop_id = base_id
 
       -- 2) draw tinted frame overlay on top
       local frame_sprite_id = 5202
@@ -710,25 +814,24 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
       local tint = box_data.backdrop or {}
       local frame_id = box_id .. "_frame"
 
-        local frame_draw = {
-          id = frame_id,
-          x = x, y = y,
-          z = z + 0.01,
-          sx = s, sy = s,
+      local frame_draw = {
+        id = frame_id,
+        x = x, y = y,
+        z = z + 0.01,
+        sx = s, sy = s,
 
-          r = tint.r or 80,
-          g = tint.g or 255,
-          b = tint.b or 80,
-          a = tint.a or 255,
-          color_mode = tint.color_mode or 2,
-        }
-        if anim_to_send then
-          frame_draw.anim_state = anim_to_send
-        end
-        Net.player_draw_sprite(player_id, frame_sprite_id, frame_draw)
-        box_data.frame_id = frame_id
-        return
-
+        r = tint.r or 80,
+        g = tint.g or 255,
+        b = tint.b or 80,
+        a = tint.a or 255,
+        color_mode = tint.color_mode or 2,
+      }
+      if anim_to_send then
+        frame_draw.anim_state = anim_to_send
+      end
+      Net.player_draw_sprite(player_id, frame_sprite_id, frame_draw)
+      box_data.frame_id = frame_id
+      return
     end
 
     -- If no configured backdrop texture, do nothing.
@@ -769,6 +872,7 @@ function TextDisplay:drawTextBoxBackdrop(player_id, box_id, box_data)
     box_data.backdrop_width = box_data.width
     box_data.backdrop_height = box_data.height
 end
+
 
 function TextDisplay:drawTextBoxMugshot(player_id, box_id, box_data)
   local mug = box_data.mugshot
@@ -832,6 +936,8 @@ local draw_opts = {
   z  = (box_data.z_order or 100) + (mug.z_bias or 0),
   sx = s,
   sy = s,
+  opacity = box_data._mug_opacity or 255,
+
 }
 
 if box_data._mug_last_state ~= desired_state then
@@ -1123,7 +1229,28 @@ function TextDisplay:updateTextBoxes(delta)
     local to_remove = nil
 
     for box_id, box_data in pairs(player_data.active_text_boxes) do
-      if box_data.state == "printing" then
+      -- DEBUG: log state transitions (this is the “truth meter”)
+      if _ng_dbg_enabled() then
+        box_data._dbg_last_state = box_data._dbg_last_state or box_data.state
+        if box_data.state ~= box_data._dbg_last_state then
+          _ng_dbg(player_id, box_id,
+            "STATE " .. tostring(box_data._dbg_last_state) .. " -> " .. tostring(box_data.state),
+            "token=" .. tostring(box_data._dbg_token) ..
+            " page=" .. tostring(box_data.current_page) ..
+            " line=" .. tostring(box_data.current_line) ..
+            " char=" .. tostring(box_data.current_char)
+          )
+          box_data._dbg_last_state = box_data.state
+        end
+      end
+
+      if box_data.state == "opening" then
+        local done = self:updateTextBoxOpening(player_id, box_id, box_data, delta, player_data)
+        if done then
+          box_data.state = "printing"
+        end
+
+      elseif box_data.state == "printing" then
         self:updateTextBoxPrinting(player_id, box_id, box_data, delta)
 
       elseif box_data.state == "waiting" then
@@ -1137,20 +1264,17 @@ function TextDisplay:updateTextBoxes(delta)
         end
 
       elseif box_data.state == "completed" then
-        -- Close automatically once the content is finished.
         self:closeTextBox(player_id, box_id)
       end
 
-      -- ALWAYS update cursor (handles show/hide + bob)
+      -- Cursor + nameplate can update every tick safely
       self:updateTextBoxCursor(player_id, box_id, box_data, delta)
 
-      -- Nameplate tick (unfold animation)
       if self.nameplate then
         self.nameplate:update(player_id, player_data, box_data, delta)
       end
     end
 
-    -- Remove after iteration (safe)
     if to_remove then
       for _, box_id in ipairs(to_remove) do
         self:removeTextBox(player_id, box_id)
@@ -1158,6 +1282,8 @@ function TextDisplay:updateTextBoxes(delta)
     end
   end
 end
+
+
 
 
 function TextDisplay:updateTextBoxPrinting(player_id, box_id, box_data, delta)
@@ -1300,36 +1426,127 @@ function TextDisplay:updateTextBoxWaiting(player_id, box_id, box_data, delta)
   end
 end
 
-function TextDisplay:updateTextBoxClosing(player_id, box_id, box_data, delta, player_data)
-  -- One-time “enter closing” behavior
-  if not box_data._closing_started then
-    box_data._closing_started = true
+function TextDisplay:updateTextBoxOpening(player_id, box_id, box_data, delta, player_data)
+  -- One-time "enter opening"
+  if not box_data._opening_started then
+    box_data._opening_started = true
 
-    -- Hide cursor (extra safety)
+    -- Only force an OPEN send if we *haven't already sent OPEN*.
+    -- (Example: setTextBoxPosition may have drawn once right after create.)
+    if box_data._panel_last_anim_state ~= "OPEN" then
+      box_data._panel_last_anim_state = nil
+    end
+
+    -- Hide cursor immediately
     local cursor_id = box_id .. "_cursor"
     Net.player_erase_sprite(player_id, cursor_id)
     box_data.cursor_visible = false
 
-    -- Remove mugshot immediately so it doesn't float during close
-    if box_data.mug_id then
-      Net.player_erase_sprite(player_id, box_data.mug_id)
-      box_data.mug_id = nil
+    if _ng_dbg_enabled() then
+      _ng_dbg(player_id, box_id, "OPEN enter",
+        "open_seconds=" .. tostring(box_data.open_seconds) .. " token=" .. tostring(box_data._dbg_token))
     end
 
-    -- Remove nameplate immediately (optional but clean)
-    if self.nameplate and player_data then
-      self.nameplate:erase(player_id, player_data, box_data)
-    end
+    -- Draw ONCE: this should be the ONLY place OPEN gets sent (unless it was already sent earlier)
+    self:drawTextBoxBackdrop(player_id, box_id, box_data)
+    self:drawTextBoxMugshot(player_id, box_id, box_data)
   end
 
-  -- Keep panel drawn while closing (CLOSE anim is edge-triggered now)
-  self:drawTextBoxBackdrop(player_id, box_id, box_data)
+  -- Clamp delta so hitches don't instantly finish open
+  local dt = math.min(delta or 0, 1/30)
 
-  box_data.close_timer = (box_data.close_timer or 0) + delta
+  box_data.open_timer = (box_data.open_timer or 0) + dt
+  local secs = box_data.open_seconds or 0.20
+
+    -- Fade mugshot in during OPEN
+    if box_data.mugshot and box_data.mugshot.enabled then
+      local p = math.min(1, (box_data.open_timer or 0) / secs)
+      box_data._mug_opacity = math.floor(255 * p + 0.5)
+      self:drawTextBoxMugshot(player_id, box_id, box_data)
+    end
+
+
+  if box_data.open_timer >= secs then
+    if _ng_dbg_enabled() then
+      _ng_dbg(player_id, box_id, "OPEN done", "open_timer=" .. string.format("%.3f", box_data.open_timer))
+      box_data._mug_opacity = 255
+
+    end
+
+    -- Force OPEN_IDLE once right as opening ends (otherwise you can get stuck on OPEN's last frame)
+    box_data._panel_last_anim_state = nil
+    local prev = box_data.state
+    box_data.state = "printing"
+    self:drawTextBoxBackdrop(player_id, box_id, box_data) -- sends OPEN_IDLE once
+    self:drawTextBoxMugshot(player_id, box_id, box_data)
+    box_data.state = prev
+
+    return true
+  end
+
+  return false
+end
+
+function TextDisplay:updateTextBoxClosing(player_id, box_id, box_data, delta, player_data)
+  -- If someone closes during opening, stop opening bookkeeping
+  box_data._opening_started = nil
+  box_data.open_timer = nil
+
+  -- One-time "enter closing"
+  if not box_data._closing_started then
+    box_data._closing_started = true
+    box_data._mug_opacity = box_data._mug_opacity or 255
+
+    -- Only force a CLOSE send if we *haven't already sent CLOSE*.
+    if box_data._panel_last_anim_state ~= "CLOSE" then
+      box_data._panel_last_anim_state = nil
+    end
+
+    -- Hide cursor
+    local cursor_id = box_id .. "_cursor"
+    Net.player_erase_sprite(player_id, cursor_id)
+    box_data.cursor_visible = false
+
+    if _ng_dbg_enabled() then
+      _ng_dbg(player_id, box_id, "CLOSE enter",
+        "close_seconds=" .. tostring(box_data.close_seconds) .. " token=" .. tostring(box_data._dbg_token))
+    end
+
+    -- Draw ONCE: apply CLOSE anim_state
+self:drawTextBoxBackdrop(player_id, box_id, box_data)
+self:drawTextBoxMugshot(player_id, box_id, box_data)
+
+
+
+
+  end
+
+  -- Clamp delta so hitches don't instantly finish close
+  local dt = math.min(delta or 0, 1/30)
+
+  box_data.close_timer = (box_data.close_timer or 0) + dt
   local secs = box_data.close_seconds or 0.25
+  -- Fade mugshot out during CLOSE
+if box_data.mugshot and box_data.mugshot.enabled and box_data.mug_id then
+  local p = math.min(1, (box_data.close_timer or 0) / secs)
+  box_data._mug_opacity = math.floor(255 * (1 - p) + 0.5)
+  self:drawTextBoxMugshot(player_id, box_id, box_data)
+end
+
+
 
   if box_data.close_timer >= secs then
-    return true -- tell caller: "ok remove now"
+    if _ng_dbg_enabled() then
+      _ng_dbg(player_id, box_id, "CLOSE done", "close_timer=" .. string.format("%.3f", box_data.close_timer))
+      -- Ensure mugshot is gone at end of close
+if box_data.mug_id then
+  Net.player_erase_sprite(player_id, box_data.mug_id)
+  box_data.mug_id = nil
+end
+box_data._mug_opacity = nil
+
+    end
+    return true
   end
 
   return false
@@ -1459,42 +1676,69 @@ function TextDisplay:clearTextBoxDisplay(player_id, box_id, box_data)
 end
 
 function TextDisplay:removeTextBox(player_id, box_id)
-    local player_data = self.player_texts[player_id]
-    if not player_data then return end
+  local player_data = self.player_texts[player_id]
+  if not player_data then return end
 
-    local box_data = player_data.active_text_boxes[box_id]
-    if not box_data then return end
+  local box_data = player_data.active_text_boxes[box_id]
+  if not box_data then return end
 
-    -- Remove nameplate (if any)
-    if self.nameplate then
-      self.nameplate:erase(player_id, player_data, box_data)
+  -- SAFE debug lib (may be stripped / nil in this runtime)
+  local dbg = _G.debug
+
+  -- WHO is deleting it? (guarded)
+  local caller = "unknown"
+  if dbg and dbg.getinfo then
+    local ok, info = pcall(dbg.getinfo, 2, "Sl")
+    if ok and info then
+      caller = tostring(info.short_src) .. ":" .. tostring(info.currentline)
     end
+  end
 
+  _ng_dbg(player_id, box_id, "REMOVE (hard delete)",
+    "caller=" .. tostring(caller) ..
+    " token=" .. tostring(box_data._dbg_token) ..
+    " state=" .. tostring(box_data.state) ..
+    " lived=" .. string.format("%.3f", (_ng_now() - (box_data._dbg_created_at or _ng_now())))
+  )
 
-    local cursor_id = box_id .. "_cursor"
-    Net.player_erase_sprite(player_id, cursor_id)
-
-    if box_data.backdrop_id then
-        Net.player_erase_sprite(player_id, box_data.backdrop_id)
+  if _ng_dbg_trace() and dbg and dbg.traceback then
+    local ok, tb = pcall(dbg.traceback, "", 2)
+    if ok and tb then
+      print(tb)
     end
+  end
 
-    if box_data.mug_id then
-        Net.player_erase_sprite(player_id, box_data.mug_id)
-        box_data.mug_id = nil
-    end
+  -- Remove nameplate (if any)
+  if self.nameplate then
+    self.nameplate:erase(player_id, player_data, box_data)
+  end
 
-    if box_data.frame_id then
-        Net.player_erase_sprite(player_id, box_data.frame_id)
-        box_data.frame_id = nil
-    end
+  local cursor_id = box_id .. "_cursor"
+  Net.player_erase_sprite(player_id, cursor_id)
 
+  if box_data.backdrop_id then
+    Net.player_erase_sprite(player_id, box_data.backdrop_id)
+  end
 
-    self:clearTextBoxDisplay(player_id, box_id, box_data)
-    player_data.active_text_boxes[box_id] = nil
+  if box_data.mug_id then
+    Net.player_erase_sprite(player_id, box_data.mug_id)
+    box_data.mug_id = nil
+  end
+
+  if box_data.frame_id then
+    Net.player_erase_sprite(player_id, box_data.frame_id)
+    box_data.frame_id = nil
+  end
+
+  self:clearTextBoxDisplay(player_id, box_id, box_data)
+  player_data.active_text_boxes[box_id] = nil
 end
+
+
 
 -- Soft-close: transitions the box into a "closing" lifecycle state.
 -- The actual sprite erasing should happen later (after the close animation finishes).
+
 function TextDisplay:closeTextBox(player_id, box_id, opts)
   local player_data = self.player_texts[player_id]
   if not player_data then return end
@@ -1502,42 +1746,42 @@ function TextDisplay:closeTextBox(player_id, box_id, opts)
   local box_data = player_data.active_text_boxes[box_id]
   if not box_data then return end
 
-  -- Already closing or already gone? do nothing.
+  opts = opts or {}
+
   if box_data.state == "closing" then
+    _ng_dbg(player_id, box_id, "CLOSE ignored (already closing)",
+      "caller=" .. tostring(opts.caller) .. " reason=" .. tostring(opts.reason)
+    )
     return
   end
 
-  opts = opts or {}
-
   -- Enter closing state
   box_data.state = "closing"
-
-  -- Timer used later (Step 3) to decide when to hard-delete
   box_data.close_timer = 0
 
-  -- How long we let the close animation play (we'll use this later)
-  -- Default is conservative; you can tune once you know the animation length.
   box_data.close_seconds =
       opts.close_seconds
       or box_data.close_seconds
       or (box_data.backdrop and box_data.backdrop.close_seconds)
       or 0.25
 
-  -- Hide cursor immediately (so it doesn't float during close)
+  -- Hide cursor immediately
   local cursor_id = box_id .. "_cursor"
   Net.player_erase_sprite(player_id, cursor_id)
   box_data.cursor_visible = false
 
-  -- Optional: clear text immediately while panel closes
-  -- (Feels nice; also avoids "closing while text still typing" weirdness.)
+    -- Start nameplate close animation (reverse-unfold)
+  if self.nameplate then
+    self.nameplate:begin_close(player_id, player_data, box_data)
+  end
+
   if opts.clear_text ~= false then
     self:clearTextBoxDisplay(player_id, box_id, box_data)
   end
 
-  -- Important: stop any printing behavior immediately
-  -- (Prevents the typewriter from continuing behind the closing animation.)
   box_data.timer = 0
 end
+
 
 
 function TextDisplay:advanceTextBox(player_id, box_id)
@@ -1623,6 +1867,27 @@ function TextDisplay:setTextBoxPosition(player_id, box_id, x, y)
     box_data.inner_x = x + box_data.padding_x
     box_data.inner_y = y + box_data.padding_y
 
+    -- CRITICAL:
+    -- setTextBoxPosition is often called immediately after createTextBox.
+    -- If we redraw the panel while we're still "opening" (before OPEN enter),
+    -- we can send OPEN twice (or restart the anim), which looks like flicker/double-open.
+    if box_data.state == "opening" and not box_data._opening_started then
+        if _ng_dbg_enabled() then
+            _ng_dbg(player_id, box_id, "setTextBoxPosition (skip draw; pre-open)",
+              "state=opening opening_started=false x=" .. tostring(x) .. " y=" .. tostring(y))
+        end
+        return
+    end
+
+    -- Same idea for closing: don't force a redraw before CLOSE enter handles it.
+    if box_data.state == "closing" and not box_data._closing_started then
+        if _ng_dbg_enabled() then
+            _ng_dbg(player_id, box_id, "setTextBoxPosition (skip draw; pre-close)",
+              "state=closing closing_started=false x=" .. tostring(x) .. " y=" .. tostring(y))
+        end
+        return
+    end
+
     self:drawTextBoxBackdrop(player_id, box_id, box_data)
     self:clearTextBoxDisplay(player_id, box_id, box_data)
 
@@ -1632,21 +1897,21 @@ function TextDisplay:setTextBoxPosition(player_id, box_id, x, y)
             for line = 1, box_data.current_line do
                 local line_text = current_page[line]
                 if line_text then
-                    local max_char = (line == box_data.current_line) and box_data.current_char or #line_text
-                    for char_pos = 1, max_char do
-                        local temp_line = box_data.current_line
-                        local temp_char = box_data.current_char
+                    local last_char = (line == box_data.current_line) and box_data.current_char or #line_text
+                    for char_pos = 1, last_char do
                         box_data.current_line = line
                         box_data.current_char = char_pos
-                        self:drawTextBoxCharacter(player_id, box_id, box_data)
-                        box_data.current_line = temp_line
-                        box_data.current_char = temp_char
+                        self:drawTextBoxCharacter(player_id, box_id, box_data, false)
                     end
                 end
             end
         end
+
+        -- restore cursor location after redraw
+        self:updateTextBoxCursor(player_id, box_id, box_data, 0)
     end
 end
+
 
 function TextDisplay:isTextBoxCompleted(player_id, box_id)
     local player_data = self.player_texts[player_id]

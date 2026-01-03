@@ -173,11 +173,36 @@ function Nameplate:attach(player_id, player_data, box_id, box_data, cfg)
     -- animation
     t = 0,
     dur = (type(cfg) == "table" and cfg.dur) or 0.14, -- snappier default
+    close_dur = (type(cfg) == "table" and cfg.close_dur) or nil,
     mids_drawn = 0,
     complete = false,
 
     text_display_id = "nameplate:" .. tostring(box_id),
   }
+end
+
+function Nameplate:begin_close(player_id, player_data, box_data, cfg)
+  local np = box_data.nameplate
+  if not np then return end
+  if np.closing then return end
+
+  np.closing = true
+  np.close_t = 0
+
+  -- allow per-box override, else per-nameplate config, else fall back
+  local cd =
+    (type(cfg) == "table" and cfg.close_dur)
+    or np.close_dur
+    or (type(cfg) == "table" and cfg.dur)
+    or np.dur
+    or 0.12
+
+  np.close_dur = cd
+
+  -- Hide text immediately so it doesn't ghost over transitions
+  if self.font_system and np.text_display_id then
+    self.font_system:eraseTextDisplay(player_id, np.text_display_id)
+  end
 end
 
 
@@ -187,15 +212,32 @@ function Nameplate:update(player_id, player_data, box_data, dt)
 
   dt = math.min(dt or 0, 1/30)
 
-  -- unfold: center -> outward, snapping by segment count
-  if not np.complete then
-    np.t = np.t + dt
-    local p = np.t / np.dur
-    if p >= 1 then p = 1; np.complete = true end
+  -- If closing: reverse-unfold then self-erase
+  if np.closing then
+    np.close_t = (np.close_t or 0) + dt
+    local p = np.close_t / (np.close_dur or 0.12)
+    if p >= 1 then
+      -- fully closed, erase everything
+      self:erase(player_id, player_data, box_data)
+      return
+    end
 
-    local mids = math.max(1, math.floor(np.mids_target * p + 0.0001))
+    local remain = 1 - p
+    local mids = math.max(0, math.floor(np.mids_target * remain + 0.0001))
     np.mids_drawn = mids
+
+  else
+    -- unfold: center -> outward, snapping by segment count
+    if not np.complete then
+      np.t = np.t + dt
+      local p = np.t / np.dur
+      if p >= 1 then p = 1; np.complete = true end
+
+      local mids = math.max(1, math.floor(np.mids_target * p + 0.0001))
+      np.mids_drawn = mids
+    end
   end
+
 
   local scale = box_data.scale or 2.0
   local z = np.z
@@ -248,8 +290,8 @@ function Nameplate:update(player_id, player_data, box_data, dt)
     sy = scale,
   })
 
-  -- TEXT (only after complete)
-  if np.complete then
+  -- TEXT (only after complete, and not while closing)
+  if np.complete and not np.closing then
     local text_x = left_x + (self.w_left * scale) + np.pad_px
     local text_y = y + (3 * scale) + 2
 
