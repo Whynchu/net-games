@@ -1,10 +1,15 @@
 --=====================================================
--- prog_vert_prompt.lua
+-- prog_vert_prompt_2.lua
 -- Vertical prompt demo PROG (basic style, like prog_basic_nameplate)
 --
 -- Adds:
 --   - Mugshot support in the vertical prompt UI
 --   - Mugshot support in the follow-up Dialogue (reuse_existing_box)
+--   - RED frame dye applied to:
+--       * vertical menu frame overlay
+--       * textbox frame overlay
+--       * nameplate frame overlay
+--     (using the same red preset from talk_presets.lua)
 --=====================================================
 
 local Direction = require("scripts/libs/direction")
@@ -12,6 +17,7 @@ require("scripts/net-games/dialogue/startup")
 
 local Dialogue       = require("scripts/net-games/dialogue/dialogue")
 local PromptVertical = require("scripts/net-games/dialogue/prompt_vertical")
+local TalkPresets    = require("scripts/net-games/npcs/talk_presets")
 
 --=====================================================
 -- Area / placement (must match your TMX object name)
@@ -38,6 +44,19 @@ local bot_id = Net.create_bot({
 })
 
 local BOT_NAME = Net.get_bot_name(bot_id)
+
+--=====================================================
+-- Frame dye preset (from talk_presets.lua)
+--=====================================================
+local function copy_frame_preset(preset)
+  if type(preset) ~= "table" then return nil end
+  return {
+    r = preset.r, g = preset.g, b = preset.b, a = preset.a,
+    color_mode = preset.color_mode,
+  }
+end
+
+local RED_FRAME = copy_frame_preset(TalkPresets.frames.red)
 
 --=====================================================
 -- Options builder (menu entries)
@@ -69,47 +88,42 @@ local function build_ui_config(box_id)
 
     --=====================================================
     -- Mugshot
-    -- IMPORTANT:
-    --   - This is what actually makes the portrait appear.
-    --   - If these paths don’t exist, you’ll get “nothing” (or errors).
-    --   - Use whatever mug asset + animation you’ve already been using successfully.
     --=====================================================
     mugshot = {
       enabled = true,
 
-      -- NOTE: Change these to your real mug asset paths if needed.
-      -- If your mug is a single static image with no animation, you can still
-      -- point anim_path to a simple 1-state animation file.
       texture_path = "/server/assets/ow/prog/prog_mug.png",
       anim_path = "/server/assets/ow/prog/prog_mug.animation",
       talk_anim_state = "TALK",
       idle_anim_state = "IDLE",
 
-      -- How much space the textbox reserves for the mug region
       reserve_w = 40,
       reserve_h = 40,
 
-      -- Positioning relative to the textbox content area/backdrop
       offset_x = 6,
       offset_y = -46,
-
-      -- Gap between mug and text area (feel free to tweak)
       gap_px = 6,
 
-      -- Sprite bookkeeping (pick an unused range if you already use 5300)
       sprite_id = 5300,
       z_bias = 50,
     },
 
     --=====================================================
     -- Backdrop (textbox frame)
-    -- This stays visible throughout, even when menu cursor/hilite are hidden.
     --=====================================================
     backdrop = {
       render_offset_x = 3,
       render_offset_y = 46,
-      style = "textbox_panel",
+      style = "textbox_panel_frame_tint",
       open_seconds = 0.20,
+
+        -- Frame overlay dye (RED) — textbox expects tint on the backdrop table itself
+        r = RED_FRAME.r,
+        g = RED_FRAME.g,
+        b = RED_FRAME.b,
+        a = RED_FRAME.a,
+        color_mode = RED_FRAME.color_mode,
+
 
       -- Screen placement / size
       x = 1,
@@ -130,6 +144,9 @@ local function build_ui_config(box_id)
     -- Nameplate (above textbox)
     --=====================================================
     nameplate = {
+      -- Frame overlay dye (RED)
+      frame = RED_FRAME,
+
       text = BOT_NAME,
       anchor = "above",
       align = "left",
@@ -155,6 +172,9 @@ local function build_layout_config()
     width = 160,
     height = 64,
 
+    -- Menu frame overlay dye (RED)
+    frame = RED_FRAME,
+
     visible_rows = 5,
     row_height = 14,
 
@@ -169,7 +189,6 @@ local function build_layout_config()
     scrollbar_h = 126,
 
     scroll_indicator_h = 12,
-
 
     -- Highlight + cursor placement
     highlight_inset_x = 12,
@@ -219,7 +238,7 @@ Net:on("actor_interaction", function(event)
       }, {
         reuse_existing_box = true,
 
-        -- IMPORTANT: include mugshot here too, so reuse looks identical
+        -- IMPORTANT: include UI here too, so reuse looks identical
         ui = build_ui_config("prog_vert_prompt_box"),
       })
     end,

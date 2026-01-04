@@ -429,23 +429,28 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
     -- DO NOT hard-delete/recreate. That causes OPEN/CLOSE flicker once you add animations.
     -- Instead: ignore the duplicate create, and print a traceback so we can find the caller.
     -- =====================================================
-    local existing = player_data.active_text_boxes and player_data.active_text_boxes[box_id]
-    if existing and not existing.marked_for_removal then
-      -- Only print the traceback once per living box to avoid log spam
-      if not existing._dbg_reported_create_collision then
-        existing._dbg_reported_create_collision = true
+local existing = player_data.active_text_boxes and player_data.active_text_boxes[box_id]
+if existing and not existing.marked_for_removal then
+  -- Only print once per living box to avoid log spam
+  if not existing._dbg_reported_create_collision then
+    existing._dbg_reported_create_collision = true
 
-        _ng_dbg(player_id, box_id,
-          "CREATE COLLISION (ignored duplicate createTextBox)",
-          "existing.state=" .. tostring(existing.state) ..
-          " existing.token=" .. tostring(existing._dbg_token) ..
-          " existing.created_at=" .. tostring(existing._dbg_created_at),
-          "trace=" .. tostring(debug.traceback("", 2))
-        )
-      end
-
-      return box_id
+    local tb = "<debug.traceback unavailable>"
+    if debug and type(debug.traceback) == "function" then
+      tb = debug.traceback("", 2)
     end
+
+    _ng_dbg(player_id, box_id,
+      "CREATE COLLISION (ignored duplicate createTextBox)",
+      "existing.state=" .. tostring(existing.state) ..
+      " existing.token=" .. tostring(existing._dbg_token) ..
+      " existing.created_at=" .. tostring(existing._dbg_created_at) ..
+      " trace=" .. tostring(tb)
+    )
+  end
+
+  return box_id
+end
 
 
     -- Use backdrop config if provided, otherwise create default

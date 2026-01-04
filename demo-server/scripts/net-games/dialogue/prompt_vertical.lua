@@ -26,6 +26,7 @@ PromptVertical._tick_attached = false
 local ASSET = {
   menu_bg       = "/server/assets/net-games/ui/prompt_vert_menu_an.png",
   menu_bg_anim  = "/server/assets/net-games/ui/prompt_vert_menu_an.animation", 
+  menu_bg_frame = "/server/assets/net-games/ui/prompt_vert_menu_an_frame.png",  
   highlight     = "/server/assets/net-games/ui/highlight_default.png",
   cursor        = "/server/assets/net-games/ui/green_cursor.png",
   scrollbar     = "/server/assets/net-games/ui/scrollbar.png",
@@ -35,6 +36,7 @@ local ASSET = {
 -- Dedicated sprite IDs (do NOT collide with textbox internals)
 --========================
 local SPR = {
+  MENU_FRAME= 5399,
   MENU_BG   = 5400,
   HILITE    = 5401,
   CURSOR    = 5402,
@@ -105,6 +107,7 @@ end
 --========================
 local function provide_ui_assets(player_id)
   Net.provide_asset_for_player(player_id, ASSET.menu_bg)
+  Net.provide_asset_for_player(player_id, ASSET.menu_bg_frame)
   Net.provide_asset_for_player(player_id, ASSET.menu_bg_anim)
   Net.provide_asset_for_player(player_id, ASSET.highlight)
   Net.provide_asset_for_player(player_id, ASSET.cursor)
@@ -126,6 +129,15 @@ local function alloc_ui_sprites(player_id)
     anim_path    = ASSET.menu_bg_anim,
     anim_state   = "OPEN_IDLE",
   })
+
+    -- MENU_FRAME uses the SAME animation file (same frame rects); it just swaps the texture
+    -- to the transparent "frame-gray" overlay.
+    Net.player_alloc_sprite(player_id, SPR.MENU_FRAME, {
+      texture_path = ASSET.menu_bg_frame,
+      anim_path    = ASSET.menu_bg_anim,
+      anim_state   = "OPEN_IDLE",
+    })
+
 
   Net.player_alloc_sprite(player_id, SPR.HILITE, { texture_path = ASSET.highlight })
   Net.player_alloc_sprite(player_id, SPR.CURSOR, { texture_path = ASSET.cursor })
@@ -150,6 +162,37 @@ local function draw_sprite(player_id, sprite_id, draw_id, x, y, z, s, anim_state
   Net.player_draw_sprite(player_id, sprite_id, opts)
 end
 
+local function draw_menu_frame_overlay(player_id, draw_id, x, y, z, s, anim_state, frame_cfg)
+  if type(frame_cfg) ~= "table" then
+    -- ensure no stale overlay is left behind
+    Net.player_erase_sprite(player_id, draw_id)
+    return
+  end
+
+  local a = tonumber(frame_cfg.a) or 255
+  if a <= 0 then
+    Net.player_erase_sprite(player_id, draw_id)
+    return
+  end
+
+  local opts = {
+    id = draw_id,
+    x = x, y = y, z = z,
+    sx = s or 2.0,
+    sy = s or 2.0,
+    r = tonumber(frame_cfg.r) or 255,
+    g = tonumber(frame_cfg.g) or 255,
+    b = tonumber(frame_cfg.b) or 255,
+    a = a,
+    color_mode = tonumber(frame_cfg.color_mode) or 2,
+  }
+
+  if anim_state then
+    opts.anim_state = anim_state
+  end
+
+  Net.player_draw_sprite(player_id, SPR.MENU_FRAME, opts)
+end
 
 
 local function erase_sprite(player_id, draw_id)
@@ -219,6 +262,10 @@ local function normalize_layout(layout)
     font  = layout.font  or "THIN_BLACK",
     scale = layout.scale or 2.0,
     z     = layout.z or 130,
+    -- Optional dyed overlay for the menu frame (same pattern as textbox/nameplate)
+    -- If provided, we draw prompt_vert_menu_an_frame.png on top with r/g/b/a + color_mode.
+    frame = layout.frame,
+
 
     padding_x   = layout.padding_x or 12,
     padding_y   = layout.padding_y or 10,
@@ -293,6 +340,11 @@ function PromptMenuInstance:new(player_id, opts)
   o.exit_index = clamp(tonumber(opts.exit_index or #o.options) or #o.options, 1, #o.options)
 
   o.keep_textbox = (opts.keep_textbox ~= false) -- default true for handoff/reuse
+  
+  -- If true, we will reuse an existing textbox UI and just replace its text
+  -- (this avoids the createTextBox collision path and gives us "new dialogue" in same window)
+  o.reuse_existing_box = (opts.reuse_existing_box == true)
+
   o.on_select = opts.on_select or function(_choice, _index) end
   o.on_cancel = opts.on_cancel or function() end
 
@@ -303,6 +355,7 @@ function PromptMenuInstance:new(player_id, opts)
   local base = o.box_id
   o.draw = {
     menu_bg   = base .. "_menu_bg",
+    menu_frame= base .. "_menu_frame",
     hilite    = base .. "_menu_hilite",
     cursor    = base .. "_menu_cursor",
     scroll    = base .. "_menu_scroll",
@@ -361,6 +414,36 @@ function PromptMenuInstance:render_textbox()
     wrap_opts = { allow_leading_spaces = true },
   }
 
+    -- If the textbox already exists (ex: coming from a YES/NO prompt),
+    -- reset it so we get fresh text in the SAME box without closing/reopening UI.
+    if self.reuse_existing_box then
+      if Displayer.Text.reset_text_box then
+        -- snake_case wrapper
+        Displayer.Text.reset_text_box(
+          self.player_id, self.box_id, self.question,
+          ui.x, ui.y, ui.w, ui.h,
+          ui.font, ui.scale, ui.z,
+          ui.backdrop,
+          ui.typing_speed,
+          ops
+        )
+        return
+      elseif Displayer.Text.resetTextBox then
+        -- camelCase (method form)
+        Displayer.Text:resetTextBox(
+          self.player_id, self.box_id, self.question,
+          ui.x, ui.y, ui.w, ui.h,
+          ui.font, ui.scale, ui.z,
+          ui.backdrop,
+          ui.typing_speed,
+          ops
+        )
+        return
+      end
+    end
+
+
+  -- Fallback: create normally
   if Displayer.Text.create_text_box then
     Displayer.Text.create_text_box(
       self.player_id, self.box_id, self.question,
@@ -380,6 +463,7 @@ function PromptMenuInstance:render_textbox()
       ops
     )
   end
+
 end
 
 function PromptMenuInstance:menu_origin()
@@ -440,6 +524,18 @@ function PromptMenuInstance:start_close(reason, keep_textbox)
     "CLOSE"
   )
 
+  -- frame overlay (dyed) closes in lockstep with the base
+draw_menu_frame_overlay(
+  self.player_id,
+  self.draw.menu_frame,
+  x, y,
+  L.z + 1,
+  L.scale,
+  "CLOSE",
+  L.frame
+)
+
+
   self.menu_bg_close_t = 0
   self.menu_bg_close_playing = true
 end
@@ -475,6 +571,18 @@ function PromptMenuInstance:render_menu_window()
     L.scale,
     anim
   )
+
+    -- dyed frame overlay (uses same animation file; only texture differs)
+    draw_menu_frame_overlay(
+      self.player_id,
+      self.draw.menu_frame,
+      x, y,
+      L.z + 1,
+      L.scale,
+      anim,
+      L.frame
+    )
+
 end
 
 
@@ -852,6 +960,17 @@ function PromptMenuInstance:update(_dt)
         L.scale,
         "OPEN_IDLE"
       )
+
+        draw_menu_frame_overlay(
+          self.player_id,
+          self.draw.menu_frame,
+          x, y,
+          L.z + 1,
+          L.scale,
+          "OPEN_IDLE",
+          L.frame
+        )
+
             -- Now that the menu window is fully open, draw text + scrollbar/cursor once
       if self.menu_contents_pending then
         self.menu_contents_pending = false
@@ -1012,6 +1131,7 @@ function PromptVertical._finalize_close(player_id, _reason, opts)
 
   -- Erase remaining sprites (menu bg last)
   erase_sprite(player_id, inst.draw.menu_bg)
+  erase_sprite(player_id, inst.draw.menu_frame)
   erase_sprite(player_id, inst.draw.hilite)
   erase_sprite(player_id, inst.draw.cursor)
   erase_sprite(player_id, inst.draw.scroll)
