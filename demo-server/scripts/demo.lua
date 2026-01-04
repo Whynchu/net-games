@@ -23,11 +23,11 @@ require("scripts/net-games/npcs/prog_basic_freedraw")
 require("scripts/net-games/npcs/prog_dramatic_dialogue")
 require("scripts/net-games/npcs/prog_dyed_dialogue")
 require("scripts/net-games/npcs/prog_prompt_dialogue")
-require("scripts/net-games/npcs/prog_prompt_dialogue_2")
 require("scripts/net-games/npcs/prog_basic_nameplate")
 require("scripts/net-games/npcs/prog_talk_dialogue")
 require("scripts/net-games/npcs/prog_talk_colors")
 require("scripts/net-games/npcs/prog_vert_prompt")
+require("scripts/net-games/npcs/prog_vert_prompt_2")
 -------------------------------------------
 -- DEMO CODE FOR NPC THAT GIVES COSMETIC --
 -------------------------------------------

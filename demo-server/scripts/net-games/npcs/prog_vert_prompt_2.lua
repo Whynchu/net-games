@@ -17,7 +17,7 @@ local PromptVertical = require("scripts/net-games/dialogue/prompt_vertical")
 -- Area / placement (must match your TMX object name)
 --=====================================================
 local area_id  = "default"
-local obj_name = "ProgVertPrompt" -- create a Tiled object with THIS exact name
+local obj_name = "ProgVertPrompt2" -- create a Tiled object with THIS exact name
 
 local bot_pos = Net.get_object_by_name(area_id, obj_name)
 assert(bot_pos, "[prog_vert_prompt] Missing Tiled object named '" .. obj_name .. "' in area: " .. tostring(area_id))
@@ -26,7 +26,7 @@ assert(bot_pos, "[prog_vert_prompt] Missing Tiled object named '" .. obj_name ..
 -- Bot creation (the overworld NPC)
 --=====================================================
 local bot_id = Net.create_bot({
-  name = "THE VERTICAL PROMPT PROG",
+  name = "OVERKILL PROMPT PROG",
   area_id = area_id,
   texture_path = "/server/assets/ow/prog/prog_ow.png",
   animation_path = "/server/assets/ow/prog/prog_ow.animation",
@@ -44,7 +44,7 @@ local BOT_NAME = Net.get_bot_name(bot_id)
 --=====================================================
 local function build_options()
   local t = {}
-  for i = 1, 12 do
+  for i = 1, 999 do
     t[#t+1] = { id = i, text = ("Option %02d"):format(i) }
   end
   t[#t+1] = { id = "exit", text = "Exit" }
@@ -205,7 +205,7 @@ Net:on("actor_interaction", function(event)
     default_index = 1,
 
     cancel_behavior = "jump_to_exit",
-    exit_index = 13,
+    exit_index = 1000,
 
     keep_textbox = true,
 

@@ -329,7 +329,7 @@ function PromptMenuInstance:new(player_id, opts)
 
   -- CLOSE anim timing (must outlive a single tick)
   o.menu_bg_close_t = 0
-  o.menu_bg_close_total = 0.11 -- your CLOSE: 0.04*5 + 0.40 = 0.60
+  o.menu_bg_close_total = 0.12 -- your CLOSE: 0.04*5 + 0.40 = 0.60
   o.menu_bg_close_playing = false
 
   -- Close pipeline
@@ -663,25 +663,33 @@ end
     erase_sprite(self.player_id, self.draw.cursor)
   end
 
-
-  -- Scrollbar thumb (only if needed)
+  -- Scroll indicator (only if needed)
   if total > rows then
     local track_x = x0 + (L.scrollbar_x or 0)
     local track_y = y0 + (L.scrollbar_y or 0)
-    local track_h = (L.scrollbar_h or 0) * scale
 
-    -- Thumb sizing: proportional, with minimum
-    local ratio = rows / total
-    local thumb_h = math.max((L.thumb_min_h or 6) * scale, track_h * ratio)
+    -- IMPORTANT: scrollbar_h is already in screen pixels. Do NOT multiply by scale.
+    local track_h = (L.scrollbar_h or 0)
 
-    -- Thumb position: map scroll_top [1..max_top] into track
+    local scale = tonumber(L.scale) or 2.0
+
+    -- Indicator height in sprite pixels (pre-scale). Set this to match your scrollbar indicator art.
+    -- If your indicator sprite is 8px tall, use 8 (default below).
+    local indicator_h = (tonumber(L.scroll_indicator_h) or 8) * scale
+
+    -- Map scroll_top [1..max_top] into the *visible rail*
     local max_top = math.max(1, total - rows + 1)
     local t = 0
     if max_top > 1 then
       t = (top - 1) / (max_top - 1)
     end
 
-    local thumb_y = track_y + (track_h - thumb_h) * t
+    -- Travel space is rail minus indicator height so it never goes past the bottom.
+    local travel = math.max(0, track_h - indicator_h)
+    local thumb_y = track_y + (travel * t)
+
+    -- Optional: snap to whole pixels to avoid jitter
+    thumb_y = math.floor(thumb_y + 0.5)
 
     draw_sprite(
       self.player_id, SPR.SCROLL,
@@ -691,11 +699,11 @@ end
       (L.z + 3),
       L.scale
     )
-
   else
     erase_sprite(self.player_id, self.draw.scroll)
   end
 end
+
 
 function PromptMenuInstance:become_ready()
   self.state = STATE.MENU
