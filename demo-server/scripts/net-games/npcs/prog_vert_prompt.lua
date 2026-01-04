@@ -1,6 +1,10 @@
 --=====================================================
 -- prog_vert_prompt.lua
 -- Vertical prompt demo PROG (basic style, like prog_basic_nameplate)
+--
+-- Adds:
+--   - Mugshot support in the vertical prompt UI
+--   - Mugshot support in the follow-up Dialogue (reuse_existing_box)
 --=====================================================
 
 local Direction = require("scripts/libs/direction")
@@ -18,6 +22,9 @@ local obj_name = "ProgVertPrompt" -- create a Tiled object with THIS exact name
 local bot_pos = Net.get_object_by_name(area_id, obj_name)
 assert(bot_pos, "[prog_vert_prompt] Missing Tiled object named '" .. obj_name .. "' in area: " .. tostring(area_id))
 
+--=====================================================
+-- Bot creation (the overworld NPC)
+--=====================================================
 local bot_id = Net.create_bot({
   name = "PROG.EXE",
   area_id = area_id,
@@ -33,7 +40,7 @@ local bot_id = Net.create_bot({
 local BOT_NAME = Net.get_bot_name(bot_id)
 
 --=====================================================
--- Options
+-- Options builder (menu entries)
 --=====================================================
 local function build_options()
   local t = {}
@@ -45,7 +52,132 @@ local function build_options()
 end
 
 --=====================================================
--- Interaction
+-- Shared UI config
+-- (So the prompt + follow-up dialogue stay visually identical)
+--=====================================================
+local function build_ui_config(box_id)
+  return {
+    box_id = box_id,
+
+    -- Text look/feel
+    font = "THIN_BLACK",
+    scale = 2.0,
+    z = 100,
+    typing_speed = 12,
+    type_sfx_path = "/server/assets/net-games/sfx/text.ogg",
+    type_sfx_min_dt = 0.05,
+
+    --=====================================================
+    -- Mugshot
+    -- IMPORTANT:
+    --   - This is what actually makes the portrait appear.
+    --   - If these paths don’t exist, you’ll get “nothing” (or errors).
+    --   - Use whatever mug asset + animation you’ve already been using successfully.
+    --=====================================================
+    mugshot = {
+      enabled = true,
+
+      -- NOTE: Change these to your real mug asset paths if needed.
+      -- If your mug is a single static image with no animation, you can still
+      -- point anim_path to a simple 1-state animation file.
+      texture_path = "/server/assets/ow/prog/prog_mug.png",
+      anim_path = "/server/assets/ow/prog/prog_mug.animation",
+      talk_anim_state = "TALK",
+      idle_anim_state = "IDLE",
+
+      -- How much space the textbox reserves for the mug region
+      reserve_w = 40,
+      reserve_h = 40,
+
+      -- Positioning relative to the textbox content area/backdrop
+      offset_x = 6,
+      offset_y = -46,
+
+      -- Gap between mug and text area (feel free to tweak)
+      gap_px = 6,
+
+      -- Sprite bookkeeping (pick an unused range if you already use 5300)
+      sprite_id = 5300,
+      z_bias = 50,
+    },
+
+    --=====================================================
+    -- Backdrop (textbox frame)
+    -- This stays visible throughout, even when menu cursor/hilite are hidden.
+    --=====================================================
+    backdrop = {
+      render_offset_x = 3,
+      render_offset_y = 46,
+      style = "textbox_panel",
+      open_seconds = 0.20,
+
+      -- Screen placement / size
+      x = 1,
+      y = 209,
+      width = 478,
+      height = 104,
+
+      -- Text padding / flow
+      padding_x = 16,
+      padding_y = 4,
+      max_lines = 3,
+
+      -- Textbox “continue” indicator (THIS is not the menu cursor)
+      indicator = { enabled = true, width = 2, height = 2, offset_x = 24, offset_y = 26 },
+    },
+
+    --=====================================================
+    -- Nameplate (above textbox)
+    --=====================================================
+    nameplate = {
+      text = BOT_NAME,
+      anchor = "above",
+      align = "left",
+      gap_x = 6,
+      gap_y = 59,
+      dur = 0.20,
+      close_dur = 0.20,
+      bob_amp = 1.2,
+      bob_speed = 2,
+    },
+  }
+end
+
+--=====================================================
+-- Shared menu layout config
+--=====================================================
+local function build_layout_config()
+  return {
+    anchor = "textbox",
+    offset_x = 2,
+    offset_y = -200,
+
+    width = 160,
+    height = 64,
+
+    visible_rows = 5,
+    row_height = 14,
+
+    -- NOTE: if you reserve mug space, you usually want a bigger left padding
+    -- so the menu text doesn't crowd the mug.
+    padding_x = 48,
+    padding_y = 4,
+
+    -- Scrollbar is part of the "physical menu" (always fine to show)
+    scrollbar_x = 452,
+    scrollbar_y = 12,
+    scrollbar_h = 90,
+
+    -- Highlight + cursor placement
+    highlight_inset_x = 12,
+    highlight_inset_y = 3,
+    cursor_offset_x = 16,
+    cursor_offset_y = 4,
+  }
+end
+
+--=====================================================
+-- Interaction (A/confirm talks to NPC)
 --=====================================================
 Net:on("actor_interaction", function(event)
   if event.actor_id ~= bot_id then return end
@@ -54,70 +186,16 @@ Net:on("actor_interaction", function(event)
   local player_id = event.player_id
   if Dialogue.is_active(player_id) then return end
 
-  -- Face the player (same nice touch as prog_basic_nameplate)
+  -- Face the player
   local player_pos = Net.get_player_position(player_id)
   Net.set_bot_direction(bot_id, Direction.from_points(bot_pos, player_pos))
 
+  --=====================================================
+  -- Open the vertical prompt menu
+  --=====================================================
   PromptVertical.menu(player_id, {
-    ui = {
-      box_id = "prog_vert_prompt_box",
-      font = "THIN_BLACK",
-      scale = 2.0,
-      z = 100,
-      typing_speed = 12,
-      type_sfx_path = "/server/assets/net-games/sfx/text.ogg",
-      type_sfx_min_dt = 0.05,
-
-
-      -- Optional: BN-ish backdrop like your other PROGs (keep simple here)
-      backdrop = {
-        render_offset_x = 3,
-        render_offset_y = 46,
-        style = "textbox_panel",
-        open_seconds = 0.20,
-        x = 1,
-        y = 209,
-        width = 478,
-        height = 104,
-        padding_x = 16,
-        padding_y = 4,
-        max_lines = 3,
-        indicator = { enabled = true, width = 2, height = 2, offset_x = 24, offset_y = 26 },
-      },
-
-      nameplate = {
-        text = BOT_NAME,
-        anchor = "above",
-        align = "left",
-        gap_x = 6,
-        gap_y = 59,
-        dur = 0.20,
-        close_dur = 0.20,
-        bob_amp = 1.2,
-        bob_speed = 2,
-      },
-    },
-
-    layout = {
-      anchor = "textbox",
-      offset_x = 2,
-      offset_y = -200,
-      width = 160,
-      height = 64,
-      visible_rows = 5,
-      row_height = 14,
-      padding_x = 48,
-      padding_y = 4,
-      scrollbar_x = 452,
-      scrollbar_y = 12,
-      scrollbar_h = 90,
-      highlight_inset_x = 12, -- + = starts farther right
-      highlight_inset_y = 3, -- + = down (scaled)
-      cursor_offset_x = 16, -- + = right
-      cursor_offset_y = 4, -- + = down (scaled by layout.scale)
-
-
-    },
+    ui = build_ui_config("prog_vert_prompt_box"),
+    layout = build_layout_config(),
 
     question = "DEFAULT PROG ONLINE{p_2}\nSIR,{p_2.2} This is the very definition of overkill... BUT LETS TAKE A LOOK SHALL WE?!",
     options = build_options(),
@@ -128,47 +206,19 @@ Net:on("actor_interaction", function(event)
 
     keep_textbox = true,
 
-on_select = function(choice, index)
-  Dialogue.start(player_id, {
-    "You picked: " .. tostring(choice.text) .. " (index " .. tostring(index) .. ")",
-  }, {
-    reuse_existing_box = true,
-    ui = {
-      box_id = "prog_vert_prompt_box",
-      font = "THIN_BLACK",
-      scale = 2.0,
-      z = 100,
-      typing_speed = 12,
+    --=====================================================
+    -- When the player selects an option:
+    -- Reuse the existing textbox AND keep the mugshot consistent.
+    --=====================================================
+    on_select = function(choice, index)
+      Dialogue.start(player_id, {
+        "You picked: " .. tostring(choice.text) .. " (index " .. tostring(index) .. ")",
+      }, {
+        reuse_existing_box = true,
 
-      backdrop = {
-        render_offset_x = 3,
-        render_offset_y = 46,
-        style = "textbox_panel",
-        open_seconds = 0.20,
-        x = 1,
-        y = 209,
-        width = 478,
-        height = 104,
-        padding_x = 16,
-        padding_y = 4,
-        max_lines = 3,
-        indicator = { enabled = true, width = 2, height = 2, offset_x = 24, offset_y = 26 },
-      },
-
-      nameplate = {
-        text = BOT_NAME,
-        anchor = "above",
-        align = "left",
-        gap_x = 6,
-        gap_y = 59,
-        dur = 0.20,
-        close_dur = 0.20,
-        bob_amp = 1.2,
-        bob_speed = 2,
-      },
-    },
-  })
-end,
-
+        -- IMPORTANT: include mugshot here too, so reuse looks identical
+        ui = build_ui_config("prog_vert_prompt_box"),
+      })
+    end,
   })
 end)

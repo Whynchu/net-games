@@ -8,6 +8,13 @@ local Displayer  = require("scripts/net-games/displayer/displayer")
 local Input      = require("scripts/net-games/input/input")
 local FontSystem = require("scripts/net-games/displayer/font-system")
 
+local MENUDBG = true
+local function mdbg(pid, msg)
+  if not MENUDBG then return end
+  print(string.format("[MENUDBG t=%.3f p=%s] %s", os.clock(), tostring(pid), tostring(msg)))
+end
+
+
 local PromptVertical = {}
 PromptVertical.instances = {}
 PromptVertical._tick_attached = false
@@ -17,7 +24,8 @@ PromptVertical._tick_attached = false
 -- Adjust paths here if your filenames differ.
 --========================
 local ASSET = {
-  menu_bg       = "/server/assets/net-games/ui/prompt_vert_menu.png",
+  menu_bg       = "/server/assets/net-games/ui/prompt_vert_menu_an.png",
+  menu_bg_anim  = "/server/assets/net-games/ui/prompt_vert_menu_an.animation", 
   highlight     = "/server/assets/net-games/ui/highlight_default.png",
   cursor        = "/server/assets/net-games/ui/green_cursor.png",
   scrollbar     = "/server/assets/net-games/ui/scrollbar.png",
@@ -32,6 +40,13 @@ local SPR = {
   CURSOR    = 5402,
   SCROLL    = 5403,
 }
+
+-- =====================================================
+-- Prompt vertical menu final size (matches OPEN_IDLE)
+-- =====================================================
+local MENU_W = 238
+local MENU_H = 95
+
 
 local CURSOR_MOVE_SFX_PATH = "/server/assets/net-games/sfx/cursor_move.ogg"
 local function play_cursor_move_sfx(player_id)
@@ -90,31 +105,51 @@ end
 --========================
 local function provide_ui_assets(player_id)
   Net.provide_asset_for_player(player_id, ASSET.menu_bg)
+  Net.provide_asset_for_player(player_id, ASSET.menu_bg_anim)
   Net.provide_asset_for_player(player_id, ASSET.highlight)
   Net.provide_asset_for_player(player_id, ASSET.cursor)
   Net.provide_asset_for_player(player_id, ASSET.scrollbar)
 end
 
+-- Track whether we've allocated UI sprites for a player (so we don't restart animations)
+local SPRITES_ALLOCATED = {}
+
 local function alloc_ui_sprites(player_id)
+  if SPRITES_ALLOCATED[player_id] then return end
+  SPRITES_ALLOCATED[player_id] = true
+
   provide_ui_assets(player_id)
 
-  -- All are static textures (no anim)
-  Net.player_alloc_sprite(player_id, SPR.MENU_BG, { texture_path = ASSET.menu_bg })
-  Net.player_alloc_sprite(player_id, SPR.HILITE,  { texture_path = ASSET.highlight })
-  Net.player_alloc_sprite(player_id, SPR.CURSOR,  { texture_path = ASSET.cursor })
-  Net.player_alloc_sprite(player_id, SPR.SCROLL,  { texture_path = ASSET.scrollbar })
+  -- MENU_BG is animated; start idle by default (we'll play OPEN once manually)
+  Net.player_alloc_sprite(player_id, SPR.MENU_BG, {
+    texture_path = ASSET.menu_bg,
+    anim_path    = ASSET.menu_bg_anim,
+    anim_state   = "OPEN_IDLE",
+  })
+
+  Net.player_alloc_sprite(player_id, SPR.HILITE, { texture_path = ASSET.highlight })
+  Net.player_alloc_sprite(player_id, SPR.CURSOR, { texture_path = ASSET.cursor })
+  Net.player_alloc_sprite(player_id, SPR.SCROLL, { texture_path = ASSET.scrollbar })
 end
 
-local function draw_sprite(player_id, sprite_id, draw_id, x, y, z, s)
+
+local function draw_sprite(player_id, sprite_id, draw_id, x, y, z, s, anim_state)
   alloc_ui_sprites(player_id)
 
-  Net.player_draw_sprite(player_id, sprite_id, {
+  local opts = {
     id = draw_id,
     x = x, y = y, z = z,
     sx = s or 2.0,
     sy = s or 2.0,
-  })
+  }
+
+  if anim_state then
+    opts.anim_state = anim_state
+  end
+
+  Net.player_draw_sprite(player_id, sprite_id, opts)
 end
+
 
 
 local function erase_sprite(player_id, draw_id)
@@ -275,14 +310,41 @@ function PromptMenuInstance:new(player_id, opts)
 
   -- Text display IDs we create via FontSystem:drawText (store returned ids to erase)
   o.text_displays = {}
+  -- Cursor bob state (used only when menu input is active)
+  o.cursor_phase  = 0
+  o.cursor_base_x = nil
+  o.cursor_base_y = nil
+  -- Menu window animation control
+  o.menu_bg_needs_open = true   -- first draw should play OPEN once
+  o.menu_bg_set_idle_next = false
+  -- Gate: don't animate menu until textbox finishes opening
+  o.wait_textbox_open_idle = true
 
-  o:render_textbox()
-  o:render_menu_window()
-  o:update_scroll_for_selection(true)
-  o:render_menu_contents(true)
 
-  return o
-end
+  -- OPEN anim timing (must outlive a single tick)
+  o.menu_bg_open_t = 0
+  o.menu_bg_open_total = 0.58 -- 0.04*5 + 0.20 (from your .animation)
+  o.menu_bg_open_playing = false
+
+  -- CLOSE anim timing (must outlive a single tick)
+  o.menu_bg_close_t = 0
+  o.menu_bg_close_total = 0.16 -- your CLOSE: 0.04*5 + 0.40 = 0.60
+  o.menu_bg_close_playing = false
+
+  -- Close pipeline
+  o.pending_close = false
+  o.pending_close_keep_textbox = false
+  o.pending_close_reason = nil
+
+
+
+    o:render_textbox()
+      -- NOTE: menu window should not draw/animate until textbox is OPEN_IDLE (gate in update()).
+      o:update_scroll_for_selection(true)
+      o:render_menu_contents(true)
+
+      return o
+    end
 
 function PromptMenuInstance:render_textbox()
   local ui = self.ui
@@ -338,20 +400,81 @@ local ty = (self.ui.backdrop and self.ui.backdrop.y) or bd.y or self.ui.y or 0
   return mx, my
 end
 
+function PromptMenuInstance:start_close(reason, keep_textbox)
+  if self.state == STATE.CLOSING or self.pending_close then
+    return
+  end
+
+  self.pending_close = true
+  self.pending_close_reason = reason
+  self.pending_close_keep_textbox = (keep_textbox == true)
+
+  -- Stop menu input immediately
+  self.state = STATE.CLOSING
+  self.ready_for_input = false
+
+  -- Kill overlays + menu text right away (background stays to animate out)
+  erase_sprite(self.player_id, self.draw.hilite)
+  erase_sprite(self.player_id, self.draw.cursor)
+  erase_sprite(self.player_id, self.draw.scroll)
+  self:clear_menu_text()
+
+  -- If OPEN is mid-play, stop it so it doesn't fight CLOSE
+  self.menu_bg_open_playing = false
+
+  -- Draw CLOSE state once and start timer
+  local L = self.layout
+  local x, y = self:menu_origin()
+  x = x + (MENU_W * L.scale)
+  y = y + (MENU_H * L.scale)
+
+  mdbg(self.player_id, "MENU_BG anim_state => CLOSE")
+  draw_sprite(
+    self.player_id, SPR.MENU_BG,
+    self.draw.menu_bg,
+    x, y,
+    L.z,
+    L.scale,
+    "CLOSE"
+  )
+
+  self.menu_bg_close_t = 0
+  self.menu_bg_close_playing = true
+end
+
+
 function PromptMenuInstance:render_menu_window()
   local L = self.layout
   local x, y = self:menu_origin()
+  -- Shift draw position so bottom-right stays anchored
+    x = x + (MENU_W * L.scale)
+    y = y + (MENU_H * L.scale)
 
-  -- Background window
-draw_sprite(
-  self.player_id, SPR.MENU_BG,
-  self.draw.menu_bg,
-  x, y,
-  L.z,
-  L.scale
-)
 
+  -- First time: play OPEN once, then next update will force OPEN_IDLE
+  local anim = nil
+  if self.menu_bg_needs_open then
+  mdbg(self.player_id, "MENU_BG anim_state => OPEN")
+
+    anim = "OPEN"
+    self.menu_bg_needs_open = false
+
+    -- start OPEN timer; do NOT slam OPEN_IDLE next tick
+    self.menu_bg_open_t = 0
+    self.menu_bg_open_playing = true
+  end
+
+
+  draw_sprite(
+    self.player_id, SPR.MENU_BG,
+    self.draw.menu_bg,
+    x, y,
+    L.z,
+    L.scale,
+    anim
+  )
 end
+
 
 function PromptMenuInstance:clear_menu_text()
   for _, id in ipairs(self.text_displays) do
@@ -383,6 +506,63 @@ function PromptMenuInstance:update_scroll_for_selection(force)
 
   return force or changed
 end
+
+function PromptMenuInstance:menu_overlays_visible()
+  return (self.state == STATE.MENU) and (self.ready_for_input == true)
+end
+
+function PromptMenuInstance:update_cursor_bob(dt)
+  if not self:menu_overlays_visible() then return end
+  if not self.cursor_base_x or not self.cursor_base_y then return end
+
+  dt = math.min(dt or 0, 1/30)
+
+  -- "Prompt cursor" feel:
+  -- snap left instantly, then push right smoothly, then snap left again.
+  local cycle_sec = 0.36      -- total loop length
+  local snap_left = 2.0       -- pixels left from base (before scale)
+  local push_right = 3.0      -- pixels to push right from snapped position (before scale)
+  local push_portion = 0.70   -- % of cycle used for the push (rest is hold)
+
+  local scale = tonumber(self.layout.scale) or 2.0
+  local snap_px = snap_left * scale
+  local push_px = push_right * scale
+
+  self.cursor_phase = (self.cursor_phase or 0) + dt
+
+  -- normalize phase into [0, cycle_sec)
+  if self.cursor_phase >= cycle_sec then
+    self.cursor_phase = self.cursor_phase - cycle_sec
+  end
+
+  local t = self.cursor_phase / cycle_sec
+
+  -- Ease-out curve for the push (fast at start, slows near end)
+  local function ease_out_quad(x)
+    return 1 - (1 - x) * (1 - x)
+  end
+
+  local x
+  if t < push_portion then
+    local p = ease_out_quad(t / push_portion)
+    -- snap to (base - snap) then push right by push_px
+    x = (self.cursor_base_x - snap_px) + (push_px * p)
+  else
+    -- hold at the pushed position until the next snap
+    x = (self.cursor_base_x - snap_px) + push_px
+  end
+
+  draw_sprite(
+    self.player_id, SPR.CURSOR,
+    self.draw.cursor,
+    x,
+    self.cursor_base_y,
+    (self.layout.z + 3),
+    self.layout.scale
+  )
+end
+
+
 
 function PromptMenuInstance:render_menu_contents(force)
   local L = self.layout
@@ -426,38 +606,50 @@ function PromptMenuInstance:render_menu_contents(force)
     if display_id then table.insert(self.text_displays, display_id) end
   end
 
-  -- Highlight bar (behind selected row)
+  -- Highlight + cursor should only be visible once the menu is actually unlocked
   local sel_row = sel - top
   if sel_row >= 0 and sel_row < rows then
-    local hx = x0 + (L.highlight_inset_x or 0)
-    local hy = cy + (sel_row * row_h) + ((L.highlight_inset_y or 0) * scale)
+    if self:menu_overlays_visible() then
+      -- Highlight bar (behind selected row)
+      local hx = x0 + (L.highlight_inset_x or 0)
+      local hy = cy + (sel_row * row_h) + ((L.highlight_inset_y or 0) * scale)
 
-    draw_sprite(
-      self.player_id, SPR.HILITE,
-      self.draw.hilite,
-      hx, hy,
-      (L.z + 1),
-      L.scale
-    )
+      draw_sprite(
+        self.player_id, SPR.HILITE,
+        self.draw.hilite,
+        hx, hy,
+        (L.z + 1),
+        L.scale
+      )
 
+      -- Cursor base (bob anim uses this)
+      local curx = x0 + (L.cursor_offset_x or 0)
+      local cury = cy + (sel_row * row_h) + ((L.cursor_offset_y or 0) * scale)
 
-    -- Cursor (left of text)
-    local curx = x0 + (L.cursor_offset_x or 0)
-    local cury = cy + (sel_row * row_h) + ((L.cursor_offset_y or 0) * scale)
+      self.cursor_base_x = curx
+      self.cursor_base_y = cury
 
-    draw_sprite(
-      self.player_id, SPR.CURSOR,
-      self.draw.cursor,
-      curx, cury,
-      (L.z + 3),
-      L.scale
-    )
-
+      draw_sprite(
+        self.player_id, SPR.CURSOR,
+        self.draw.cursor,
+        curx, cury,
+        (L.z + 3),
+        L.scale
+      )
+    else
+      -- Menu text is allowed to show, but overlays must not
+      self.cursor_base_x = nil
+      self.cursor_base_y = nil
+      erase_sprite(self.player_id, self.draw.hilite)
+      erase_sprite(self.player_id, self.draw.cursor)
+    end
   else
-    -- Not visible (shouldn't happen), erase overlays
+    self.cursor_base_x = nil
+    self.cursor_base_y = nil
     erase_sprite(self.player_id, self.draw.hilite)
     erase_sprite(self.player_id, self.draw.cursor)
   end
+
 
   -- Scrollbar thumb (only if needed)
   if total > rows then
@@ -496,6 +688,13 @@ function PromptMenuInstance:become_ready()
   self.state = STATE.MENU
   self.ready_for_input = true
 
+  -- Reset bob so it doesn't start mid-wave
+  self.cursor_phase = 0
+
+  -- Make sure selection is in view and overlays render immediately
+  self:update_scroll_for_selection(true)
+  self:render_menu_contents(true)
+
   -- Avoid carry-press from dialogue confirm spamming into menu selection
   local held = {}
   if Input.is_down(self.player_id, "up")      then table.insert(held, "up") end
@@ -509,13 +708,17 @@ function PromptMenuInstance:become_ready()
   end
 end
 
+
 function PromptMenuInstance:select_current()
   local idx = self.selection_index
   local choice = self.options[idx]
 
-  PromptVertical.close(self.player_id, "select", { keep_textbox = self.keep_textbox })
+  -- Animate menu out, then finalize; callback will run after close completes
+  self._post_close_cb = function()
+    self.on_select(choice, idx)
+  end
+  self:start_close("select", self.keep_textbox)
 
-  self.on_select(choice, idx)
 end
 
 function PromptMenuInstance:do_cancel()
@@ -526,8 +729,11 @@ function PromptMenuInstance:do_cancel()
   end
 
   if beh == "close" then
-    PromptVertical.close(self.player_id, "cancel", { keep_textbox = self.keep_textbox })
-    self.on_cancel()
+    self._post_close_cb = function()
+      self.on_cancel()
+    end
+    self:start_close("cancel", self.keep_textbox)
+
     return
   end
 
@@ -555,6 +761,73 @@ end
 function PromptMenuInstance:update(_dt)
   local player_id = self.player_id
   local st = Displayer.Text.getTextBoxState(player_id, self.box_id)
+  -- =====================================================
+  -- Gate: do NOT draw/animate the menu until textbox is fully open
+  -- =====================================================
+  if self.wait_textbox_open_idle then
+    -- Textbox is still playing its OPEN animation
+    if st == "opening" then
+      return
+    end
+
+    -- Textbox is now visually open (printing or waiting)
+    self.wait_textbox_open_idle = false
+
+    -- First time we ever draw the menu bg -> plays OPEN (via menu_bg_needs_open)
+    self:render_menu_window()
+  end
+
+
+
+  -- =====================================================
+  -- CLOSE animation timing (must run even after OPEN is done)
+  -- =====================================================
+  if self.menu_bg_close_playing then
+    local dt = _dt or 0
+    self.menu_bg_close_t = self.menu_bg_close_t + dt
+
+    if self.menu_bg_close_t >= (self.menu_bg_close_total or 0.60) then
+      self.menu_bg_close_playing = false
+
+      -- Now actually close/cleanup
+      PromptVertical._finalize_close(player_id, self.pending_close_reason, {
+        keep_textbox = self.pending_close_keep_textbox
+      })
+      return
+    end
+
+    -- While closing, swallow inputs and do nothing else
+    Input.consume(player_id)
+    return
+  end
+
+  -- =====================================================
+  -- OPEN animation timing
+  -- =====================================================
+  if self.menu_bg_open_playing then
+    local dt = _dt or 0
+    self.menu_bg_open_t = self.menu_bg_open_t + dt
+
+    if self.menu_bg_open_t >= (self.menu_bg_open_total or 0.58) then
+      self.menu_bg_open_playing = false
+
+      local L = self.layout
+      local x, y = self:menu_origin()
+      x = x + (MENU_W * L.scale)
+      y = y + (MENU_H * L.scale)
+
+      draw_sprite(
+        self.player_id, SPR.MENU_BG,
+        self.draw.menu_bg,
+        x, y,
+        L.z,
+        L.scale,
+        "OPEN_IDLE"
+      )
+    end
+  end
+
+
 
   -- While printing: allow hold-confirm to fast-forward textbox; menu locked
     if st == "printing" then
@@ -626,28 +899,42 @@ function PromptMenuInstance:update(_dt)
   end
 
   local total = #self.options
+  self:update_cursor_bob(_dt)
 
-  if Input.pop(player_id, "up") then
-    local prev = self.selection_index
-    self.selection_index = clamp(self.selection_index - 1, 1, total)
-    if self.selection_index ~= prev then
-      local _ = self:update_scroll_for_selection(false)
-      play_cursor_move_sfx(player_id)
-      self:render_menu_contents(true)
-    end
-    return
-  end
+    if Input.pop(player_id, "up") then
+      local prev = self.selection_index
 
-  if Input.pop(player_id, "down") then
-    local prev = self.selection_index
-    self.selection_index = clamp(self.selection_index + 1, 1, total)
-    if self.selection_index ~= prev then
-      local _ = self:update_scroll_for_selection(false)
-      play_cursor_move_sfx(player_id)
-      self:render_menu_contents(true)
+      if self.selection_index <= 1 then
+        self.selection_index = total
+      else
+        self.selection_index = self.selection_index - 1
+      end
+
+      if self.selection_index ~= prev then
+        local _ = self:update_scroll_for_selection(false)
+        play_cursor_move_sfx(player_id)
+        self:render_menu_contents(true)
+      end
+      return
     end
-    return
-  end
+
+    if Input.pop(player_id, "down") then
+      local prev = self.selection_index
+
+      if self.selection_index >= total then
+        self.selection_index = 1
+      else
+        self.selection_index = self.selection_index + 1
+      end
+
+      if self.selection_index ~= prev then
+        local _ = self:update_scroll_for_selection(false)
+        play_cursor_move_sfx(player_id)
+        self:render_menu_contents(true)
+      end
+      return
+    end
+
 
   if Input.pop(player_id, "confirm") then
     self:select_current()
@@ -681,14 +968,14 @@ function PromptVertical.menu(player_id, opts)
   return inst.box_id
 end
 
-function PromptVertical.close(player_id, _reason, opts)
+function PromptVertical._finalize_close(player_id, _reason, opts)
   local inst = PromptVertical.instances[player_id]
   if not inst then return end
 
   opts = opts or {}
   local keep = (opts.keep_textbox == true)
 
-  -- Erase sprites
+  -- Erase remaining sprites (menu bg last)
   erase_sprite(player_id, inst.draw.menu_bg)
   erase_sprite(player_id, inst.draw.hilite)
   erase_sprite(player_id, inst.draw.cursor)
@@ -701,7 +988,6 @@ function PromptVertical.close(player_id, _reason, opts)
     Displayer.Text.closeTextBox(player_id, inst.box_id)
   else
     set_textbox_indicator_enabled(player_id, inst.box_id, true)
-    -- Handoff: keep textbox alive but swallow inputs so next dialogue doesn’t auto-advance
     Input.consume(player_id)
     Input.clear_require_release(player_id, { "confirm", "cancel" })
     Input.swallow(player_id, 0.10)
@@ -716,7 +1002,28 @@ function PromptVertical.close(player_id, _reason, opts)
     end
   end
 
+  -- Run deferred callback (selection/cancel) after visuals are done
+  if inst._post_close_cb then
+    local cb = inst._post_close_cb
+    inst._post_close_cb = nil
+    pcall(cb)
+  end
+
+  SPRITES_ALLOCATED[player_id] = nil
   PromptVertical.instances[player_id] = nil
 end
+
+
+function PromptVertical.close(player_id, _reason, opts)
+  local inst = PromptVertical.instances[player_id]
+  if not inst then return end
+
+  opts = opts or {}
+  local keep = (opts.keep_textbox == true)
+
+  -- Start animated close instead of instant erase
+  inst:start_close(_reason or "close", keep)
+end
+
 
 return PromptVertical
