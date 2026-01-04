@@ -10,6 +10,13 @@ local Talk = require("scripts/net-games/npcs/talk")
 
 local AREA_ID = "default"
 
+local OW_COLOR_DIR = "/server/assets/ow/prog/"
+
+local function ow(color)
+  return OW_COLOR_DIR .. "prog_ow_" .. color .. ".png"
+end
+
+
 --=====================================================
 -- prog_default
 --=====================================================
@@ -35,6 +42,7 @@ Talk.npc({
   name    = "LIME PROG",
   preset  = "prog_prompt",
   frame   = "lime",
+  texture_path = ow("lime"),
   lines = {
     "LIME PROG ONLINE.",
     "Everything is GO.{p_0.2} Fast.{p_0.2} Clean.{p_0.2} Alive.",
@@ -51,7 +59,7 @@ Talk.npc({
   name    = "RED PROG",
   preset  = "prog_prompt",
   frame   = "red",
-
+  texture_path = ow("red"),
   prompt = {
     question = "RED PROG READY. PUSH HARD?",
 
@@ -79,6 +87,7 @@ Talk.npc({
   name    = "PURPLE PROG",
   preset  = "prog_prompt",
   frame   = "purple",
+  texture_path = ow("purple"),
   lines = {
     "PURPLE PROG speaking.",
     "Mystery is just data wearing a cloak.",
@@ -95,6 +104,7 @@ Talk.npc({
   name    = "TURQUOISE PROG",
   preset  = "prog_prompt",
   frame   = "turquoise",
+  texture_path = ow("turquoise"),
   lines = {
     "TURQUOISE PROG online.",
     "Breathe.{p_0.3} Smooth inputs.{p_0.3} Smooth outputs.",
@@ -111,6 +121,7 @@ Talk.npc({
   name    = "PRETTY PINK PROG",
   preset  = "prog_prompt",
   frame   = "pink",
+  texture_path = ow("pink"),
   lines = {
     "PINK PROG reporting in.",
     "I made the UI cute so the bugs feel bad about existing.",
@@ -127,6 +138,7 @@ Talk.npc({
   name    = "EMERALD PROG",
   preset  = "prog_prompt",
   frame   = "emerald",
+  texture_path = ow("emerald"),
   lines = {
     "EMERALD PROG operational.",
     "Stable.{p_0.2} Grounded.{p_0.2} Built to last.",
@@ -143,6 +155,7 @@ Talk.npc({
   name    = "SAPPHIRE PROG",
   preset  = "prog_prompt",
   frame   = "sapphire",
+  texture_path = ow("sapphire"),
   lines = {
     "SAPPHIRE PROG here.",
     "Cool head.{p_0.2} Clear eyes.{p_0.2} Clean diff.",
@@ -159,6 +172,7 @@ Talk.npc({
   name    = "YELLOW PROG",
   preset  = "prog_prompt",
   frame   = "yellow",
+  texture_path = ow("yellow"),
   lines = {
     "YELLOW PROG online.",
     "Good news:{p_0.2} it's bright for a reason.",
@@ -175,6 +189,7 @@ Talk.npc({
   name    = "SAFETY ORANGE PROG",
   preset  = "prog_prompt",
   frame   = "orange",
+  texture_path = ow("orange"),
   lines = {
     "ORANGE PROG active.",
     "I run hot.{p_0.2} I move fast.{p_0.2} I break walls.",
@@ -191,6 +206,7 @@ Talk.npc({
   name    = "GREY PROG",
   preset  = "prog_prompt",
   frame   = "charcoal_grey",
+  texture_path = ow("charcoal_grey"),
 
   prompt = {
     question = "CHARCOAL PROG READY. SHIP NOW?",
@@ -219,6 +235,7 @@ Talk.npc({
   name    = "WHITE PROG",
   preset  = "prog_prompt",
   frame   = "white",
+  texture_path = ow("white"),
   lines = {
     "WHITE PROG reporting.",
     "Baseline check:{p_0.2} no tricks.{p_0.2} no tint lies.",
