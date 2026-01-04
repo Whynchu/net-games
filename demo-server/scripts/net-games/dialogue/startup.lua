@@ -3,7 +3,7 @@ print("[net-games dialogue/startup] LOADING...")
 -- =====================================================
 -- Textbox debug master switch
 -- =====================================================
-_G.NG_TEXTBOX_DEBUG = true          -- set false to disable
+_G.NG_TEXTBOX_DEBUG = false          -- set false to disable
 _G.NG_TEXTBOX_DEBUG_TRACE = false   -- set true if you want stack traces (spammy)
 
 local Displayer = require("scripts/net-games/displayer/displayer")

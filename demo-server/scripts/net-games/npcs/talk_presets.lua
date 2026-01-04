@@ -40,6 +40,20 @@ P.mugs = {
     sprite_id = 5300,
     z_bias = 50,
   },
+
+    prog_red =       { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_red.png",       anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5301, z_bias=50 },
+    prog_sapphire =      { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_sapphire.png",      anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5302, z_bias=50 },
+    prog_emerald =     { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_emerald.png",     anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5303, z_bias=50 },
+    prog_yellow =    { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_yellow.png",    anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5304, z_bias=50 },
+    prog_orange =    { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_orange.png",    anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5305, z_bias=50 },
+    prog_purple =    { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_purple.png",    anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5306, z_bias=50 },
+    prog_pink =      { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_pink.png",      anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5307, z_bias=50 },
+    prog_turquoise = { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_turquoise.png",      anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5308, z_bias=50 },
+    prog_charcoal_grey =      { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_charcoal_grey.png",      anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5309, z_bias=50 },
+    prog_lime =      { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_lime.png",      anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5310, z_bias=50 },
+    prog_white =     { enabled=true, texture_path="/server/assets/ow/prog/prog_mug_white.png",     anim_path="/server/assets/ow/prog/prog_mug.animation", talk_anim_state="TALK", idle_anim_state="IDLE", reserve_w=40, reserve_h=40, offset_x=6, offset_y=-46, gap_px=6, sprite_id=5311, z_bias=50 },
+
+
 }
 
 -- ----------------------------

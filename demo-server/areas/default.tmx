@@ -96,40 +96,40 @@
   <object id="83" name="prog_talk_prompt_npc" x="1142.37" y="439.777">
    <point/>
   </object>
-  <object id="84" name="prog_orange" x="982.778" y="376.119">
+  <object id="84" name="prog_orange" x="725.778" y="374.119">
    <point/>
   </object>
-  <object id="85" name="prog_lime" x="469.761" y="373.441">
+  <object id="85" name="prog_lime" x="567.011" y="375.191">
    <point/>
   </object>
-  <object id="86" name="prog_purple" x="598.295" y="375.558">
+  <object id="86" name="prog_purple" x="502.045" y="373.808">
    <point/>
   </object>
-  <object id="87" name="prog_pink" x="727.806" y="375.833">
+  <object id="87" name="prog_pink" x="598.056" y="375.583">
    <point/>
   </object>
-  <object id="88" name="prog_emerald" x="788.39" y="374.459">
+  <object id="88" name="prog_emerald" x="631.14" y="374.709">
    <point/>
   </object>
-  <object id="89" name="prog_red" x="532.764" y="373.847">
+  <object id="89" name="prog_red" x="470.264" y="375.347">
    <point/>
   </object>
-  <object id="90" name="prog_turquoise" x="660.741" y="374.457">
+  <object id="90" name="prog_turquoise" x="536.241" y="375.957">
    <point/>
   </object>
-  <object id="91" name="prog_sapphire" x="853.498" y="374.862">
+  <object id="91" name="prog_sapphire" x="662.748" y="375.612">
    <point/>
   </object>
-  <object id="92" name="prog_charcoal_grey" x="1048.03" y="374.445">
+  <object id="92" name="prog_charcoal_grey" x="758.528" y="374.945">
    <point/>
   </object>
-  <object id="93" name="prog_yellow" x="917.744" y="374.764">
+  <object id="93" name="prog_yellow" x="696.244" y="376.264">
    <point/>
   </object>
-  <object id="94" name="prog_white" x="1110.59" y="373.747">
+  <object id="94" name="prog_white" x="790.094" y="375.247">
    <point/>
   </object>
-  <object id="95" name="prog_default" x="470.75" y="441.25">
+  <object id="95" name="prog_default" x="470.75" y="440.25">
    <point/>
   </object>
  </objectgroup>
