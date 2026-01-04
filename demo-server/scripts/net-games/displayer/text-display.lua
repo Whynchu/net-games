@@ -178,6 +178,26 @@ local function normalize_glyph(raw)
   return raw
 end
 
+local function normalize_text(text)
+  if not text or text == "" then return text end
+
+  -- UTF-8 smart punctuation
+  text = text:gsub("’", "'"):gsub("‘", "'")
+  text = text:gsub("“", '"'):gsub("”", '"')
+  text = text:gsub("–", "-"):gsub("—", "-")
+  text = text:gsub("…", "...")
+
+  -- CP1252 bytes (common on Windows)
+  local b = string.char
+  text = text:gsub(b(0x91), "'"):gsub(b(0x92), "'")
+  text = text:gsub(b(0x93), '"'):gsub(b(0x94), '"')
+  text = text:gsub(b(0x96), "-"):gsub(b(0x97), "-")
+  text = text:gsub(b(0x85), "...")
+
+  return text
+end
+
+
 -- Match FontSystem's anim naming: strip trailing "_BLACK" for anim_state prefixes
 local function anim_prefix_for_font(font_name)
   return (font_name and font_name:gsub("_BLACK$", "")) or font_name
@@ -482,6 +502,9 @@ function TextDisplay:createTextBox(player_id, box_id, text, x, y, width, height,
       end
     end
 
+    text = normalize_text(text)
+
+
     -- Parse markup into ops
     local ops = parse_markup_ops(text)
 
@@ -746,6 +769,7 @@ function TextDisplay:resetTextBox(player_id, box_id, text, x, y, width, height, 
   end
 
   -- Parse markup into ops (same logic as createTextBox)
+  text = normalize_text(text)
   local ops = parse_markup_ops(text)
 
   -- Build wrapped_text with pause sentinels (resolved AFTER wrapping)

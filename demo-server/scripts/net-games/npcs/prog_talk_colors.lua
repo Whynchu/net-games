@@ -2,7 +2,6 @@
 -- prog_talk_colors.lua
 -- PROG talk NPCs: one per frame dye color
 -- Tiled object names must be: prog_{color}
--- Example: prog_red, prog_sapphire, prog_charcoal_grey, etc.
 --=====================================================
 
 require("scripts/net-games/framework")
@@ -12,12 +11,28 @@ local Talk = require("scripts/net-games/npcs/talk")
 local AREA_ID = "default"
 
 --=====================================================
+-- prog_default
+--=====================================================
+Talk.npc({
+  area_id = AREA_ID,
+  object  = "prog_default",
+  name    = "DEFAULT PROG",
+  preset  = "prog_prompt",
+  lines = {
+    "{end_page}DEFAULT PROG ONLINE{p_2}",
+    "{end_line} ",
+    "SIR,{p_2.2} This is the very definition of overkill.{p_0.2}.{p_0.4}.{p_0.8}",
+    "{end_page}BUT LETS TAKE A LOOK SHALL WE?!",
+  },
+})
+
+--=====================================================
 -- prog_lime
 --=====================================================
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_lime",
-  name    = "PROG",
+  name    = "LIME PROG",
   preset  = "prog_prompt",
   frame   = "lime",
   lines = {
@@ -28,18 +43,30 @@ Talk.npc({
 })
 
 --=====================================================
--- prog_red
+-- prog_red (PROMPT)
 --=====================================================
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_red",
-  name    = "PROG",
+  name    = "RED PROG",
   preset  = "prog_prompt",
   frame   = "red",
-  lines = {
-    "RED PROG HERE!!",
-    "OKAY OKAY OKAY—{p_0.15}WE’RE DOING IT!!",
-    "{end_page}I DON’T KNOW WHAT IT IS BUT IT’S IMPORTANT.",
+
+  prompt = {
+    question = "RED PROG READY. PUSH HARD?",
+
+    yes_lines = {
+      "Yes confirmed.",
+      "We move fast.",
+      "We break things on purpose.",
+      "{end_page}If it matters, we do it now.",
+    },
+
+    no_lines = {
+      "Copy that.",
+      "Holding position.",
+      "{end_page}Pressure stays on standby.",
+    },
   },
 })
 
@@ -49,7 +76,7 @@ Talk.npc({
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_purple",
-  name    = "PROG",
+  name    = "PURPLE PROG",
   preset  = "prog_prompt",
   frame   = "purple",
   lines = {
@@ -65,7 +92,7 @@ Talk.npc({
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_turquoise",
-  name    = "PROG",
+  name    = "TURQUOISE PROG",
   preset  = "prog_prompt",
   frame   = "turquoise",
   lines = {
@@ -81,13 +108,13 @@ Talk.npc({
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_pink",
-  name    = "PROG",
+  name    = "PRETTY PINK PROG",
   preset  = "prog_prompt",
   frame   = "pink",
   lines = {
     "PINK PROG reporting in.",
     "I made the UI cute so the bugs feel bad about existing.",
-    "{end_page}It’s working.{p_0.2} You’re allowed to be proud.",
+    "{end_page}It's working.{p_0.2} You're allowed to be proud.",
   },
 })
 
@@ -97,13 +124,13 @@ Talk.npc({
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_emerald",
-  name    = "PROG",
+  name    = "EMERALD PROG",
   preset  = "prog_prompt",
   frame   = "emerald",
   lines = {
     "EMERALD PROG operational.",
     "Stable.{p_0.2} Grounded.{p_0.2} Built to last.",
-    "{end_page}We don’t just ship.{p_0.2} We endure.",
+    "{end_page}We don't just ship.{p_0.2} We endure.",
   },
 })
 
@@ -113,7 +140,7 @@ Talk.npc({
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_sapphire",
-  name    = "PROG",
+  name    = "SAPPHIRE PROG",
   preset  = "prog_prompt",
   frame   = "sapphire",
   lines = {
@@ -129,12 +156,12 @@ Talk.npc({
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_yellow",
-  name    = "PROG",
+  name    = "YELLOW PROG",
   preset  = "prog_prompt",
   frame   = "yellow",
   lines = {
     "YELLOW PROG online.",
-    "Good news:{p_0.2} it’s bright for a reason.",
+    "Good news:{p_0.2} it's bright for a reason.",
     "{end_page}Spot the issue.{p_0.2} Tag it.{p_0.2} Fix it.{p_0.2} Celebrate.",
   },
 })
@@ -145,7 +172,7 @@ Talk.npc({
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_orange",
-  name    = "PROG",
+  name    = "SAFETY ORANGE PROG",
   preset  = "prog_prompt",
   frame   = "orange",
   lines = {
@@ -156,18 +183,30 @@ Talk.npc({
 })
 
 --=====================================================
--- prog_charcoal_grey
+-- prog_charcoal_grey (PROMPT)
 --=====================================================
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_charcoal_grey",
-  name    = "PROG",
+  name    = "GREY PROG",
   preset  = "prog_prompt",
   frame   = "charcoal_grey",
-  lines = {
-    "CHARCOAL PROG online.",
-    "Quiet mode.{p_0.3} Minimal noise.{p_0.3} Maximum signal.",
-    "{end_page}When you’re done, we ship. No drama.",
+
+  prompt = {
+    question = "CHARCOAL PROG READY. SHIP NOW?",
+
+    yes_lines = {
+      "Confirmed.",
+      "No noise.",
+      "No drama.",
+      "{end_page}We ship.",
+    },
+
+    no_lines = {
+      "Understood.",
+      "Holding for clarity.",
+      "{end_page}Signal stays clean.",
+    },
   },
 })
 
@@ -177,7 +216,7 @@ Talk.npc({
 Talk.npc({
   area_id = AREA_ID,
   object  = "prog_white",
-  name    = "PROG",
+  name    = "WHITE PROG",
   preset  = "prog_prompt",
   frame   = "white",
   lines = {

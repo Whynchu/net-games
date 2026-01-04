@@ -304,6 +304,56 @@ local function anim_prefix_for_font(font_name)
     return (font_name and font_name:gsub("_BLACK$", "")) or font_name
 end
 
+-- Smart punctuation normalization (FontSystem needs this too; nameplates use FontSystem directly)
+local function normalize_glyph(raw)
+    if not raw or raw == "" then return nil end
+    if raw == " " then return " " end
+
+    -- single quotes
+    if raw == "’" or raw == "‘" then raw = "'" end
+
+    -- double quotes
+    if raw == "“" or raw == "”" then raw = '"' end
+
+    -- dashes
+    if raw == "–" or raw == "—" then raw = "-" end
+
+    return raw
+end
+
+
+-- Normalize punctuation into ASCII BEFORE we iterate by bytes.
+-- Handles both UTF-8 punctuation and CP1252 "smart" punctuation bytes (common on Windows).
+local function normalize_text(text)
+    if not text or text == "" then return text end
+
+    -- UTF-8 smart punctuation
+    text = text:gsub("’", "'"):gsub("‘", "'")
+    text = text:gsub("“", '"'):gsub("”", '"')
+    text = text:gsub("–", "-"):gsub("—", "-")
+    text = text:gsub("…", "...")
+
+    -- CP1252 smart punctuation bytes (Windows-1252)
+    -- 0x91 ‘  0x92 ’  0x93 “  0x94 ”  0x96 –  0x97 —  0x85 …
+    local b = string.char
+    text = text:gsub(b(0x91), "'"):gsub(b(0x92), "'")
+    text = text:gsub(b(0x93), '"'):gsub(b(0x94), '"')
+    text = text:gsub(b(0x96), "-"):gsub(b(0x97), "-")
+    text = text:gsub(b(0x85), "...")
+
+    return text
+end
+
+local DEBUG_UNKNOWN_GLYPHS = true
+
+local function dbg_unknown(font_name, raw_byte, state, text, i)
+    if not DEBUG_UNKNOWN_GLYPHS then return end
+    local byte = string.byte(raw_byte)
+    print(string.format("[FontSystem] unknown glyph: font=%s i=%d byte=0x%02X state=%s context=%q",
+        tostring(font_name), i, byte, tostring(state), tostring(text)))
+end
+
+
 
 -- Table with each letter of the alphabet as separate strings
 local alphabet = {
@@ -328,11 +378,12 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
     font_name = font_name or "THICK"
     scale = scale or 2.0
     z_order = z_order or 100
-    
+    text = normalize_text(text)
+
+
     local player_data = self.player_fonts[player_id]
     if not player_data then return nil end
-    
-    -- Use the provided display_id instead of generating one
+
     local display_data = {
         font = font_name,
         x = x,
@@ -342,81 +393,67 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
         character_objects = {},
         text = text
     }
-    
+
     local current_x = x
     local char_widths = self.char_widths[font_name] or self.char_widths.THICK
-    
-    -- FIXED: Calculate spacing that scales properly to preserve monospace
-    local base_spacing = 1  -- Base spacing at scale 1.0
+
+    local base_spacing = 1
     local scaled_spacing = base_spacing * scale
-    
+
     for i = 1, #text do
-        local char = text:sub(i, i)
-        -- Use a default width if character not found
+        local raw = text:sub(i, i)
+        local char = normalize_glyph(raw) or raw
+
+        -- BATTLE/WIDE are uppercase-y fonts (only affects letters)
+        if (font_name == "BATTLE" or font_name == "WIDE") and char:match("%a") then
+            char = char:upper()
+        end
+
         local char_width = char_widths[char] or char_widths["A"] or 6
         local scaled_width = char_width * scale
-        
-        -- SPACE: advance only (no anim_state exists for " ")
+
+        -- Space: advance only (no sprite)
         if char == " " then
             current_x = current_x + scaled_width + scaled_spacing
             goto continue
         end
 
-        -- SPACE: advance only (no anim_state exists for " ")
-        if char == " " then
-            current_x = current_x + scaled_width + scaled_spacing
-            -- do not draw sprite, do not insert object
-            goto continue
-        end
-
-        -- Use very high character IDs to avoid conflicts
         local obj_id = display_id .. "_char_" .. (10000 + i)
-        
 
-        if char == char:lower() and isInAlphabet(char) then 
-            Net.player_draw_sprite(
-                player_id,
-                font_name,
-                {
-                    id = obj_id,
-                    x = current_x,
-                    y = y,
-                    z = z_order,
-                    sx = scale,
-                    sy = scale,
-                    anim_state = anim_prefix_for_font(font_name) .. "_LOWER_" .. char:upper()
-                }
-            )
+        local prefix = anim_prefix_for_font(font_name)
+        local state
+        if char == char:lower() and isInAlphabet(char) then
+            state = prefix .. "_LOWER_" .. char:upper()
         else
-            Net.player_draw_sprite(
-                player_id,
-                font_name,
-                {
-                    id = obj_id,
-                    x = current_x,
-                    y = y,
-                    z = z_order,
-                    sx = scale,
-                    sy = scale,
-                    anim_state = anim_prefix_for_font(font_name) .. "_" .. char
-                }
-            )
-        end 
+            state = prefix .. "_" .. char
+        end
 
-        
-        
+        -- DEBUG: log any glyph that is not in the width table (usually encoding / punctuation issues)
+        if char ~= " " and not char_widths[char] then
+            dbg_unknown(font_name, raw, state, text, i)
+        end
+
+
+        Net.player_draw_sprite(player_id, font_name, {
+            id = obj_id,
+            x = current_x,
+            y = y,
+            z = z_order,
+            sx = scale,
+            sy = scale,
+            anim_state = state
+        })
+
         table.insert(display_data.character_objects, {
             obj_id = obj_id,
             width = scaled_width
         })
-        
-        -- FIXED: Use scaled spacing to preserve monospace at different scales
+
         current_x = current_x + scaled_width + scaled_spacing
 
         ::continue::
-
     end
-    
+
     player_data.active_displays[display_id] = display_data
     return display_id
 end
@@ -428,6 +465,8 @@ function FontSystem:drawText(player_id, text_id, text, x, y, z_order, font_name,
     font_name = font_name or "THICK"
     scale = tonumber(scale) or 2.0
     z_order = z_order or 100
+    text = normalize_text(text)
+
 
     local player_data = self.player_fonts[player_id]
     if not player_data then return nil end
@@ -450,16 +489,16 @@ function FontSystem:drawText(player_id, text_id, text, x, y, z_order, font_name,
     local scaled_spacing = base_spacing * scale
 
     for i = 1, #text do
-        local char = text:sub(i, i)
+        local raw = text:sub(i, i)
+        local char = normalize_glyph(raw) or raw
 
-        if font_name == "BATTLE" or font_name == "WIDE" then
+        if (font_name == "BATTLE" or font_name == "WIDE") and char:match("%a") then
             char = char:upper()
         end
 
         local char_width = char_widths[char] or char_widths["A"] or 6
         local scaled_width = char_width * scale
 
-        -- safer IDs to reduce collisions with other text systems
         local obj_id = display_id .. "_char_" .. (10000 + i)
 
         local prefix = anim_prefix_for_font(font_name)
@@ -468,6 +507,18 @@ function FontSystem:drawText(player_id, text_id, text, x, y, z_order, font_name,
             state = prefix .. "_LOWER_" .. char:upper()
         else
             state = prefix .. "_" .. char
+        end
+
+        -- DEBUG: log any glyph that is not in the width table
+        if char ~= " " and not char_widths[char] then
+            dbg_unknown(font_name, raw, state, text, i)
+        end
+
+
+        -- Space: advance only (no sprite)
+        if char == " " then
+            current_x = current_x + scaled_width + scaled_spacing
+            goto continue
         end
 
         Net.player_draw_sprite(player_id, font_name, {
@@ -479,7 +530,10 @@ function FontSystem:drawText(player_id, text_id, text, x, y, z_order, font_name,
 
         table.insert(display_data.character_objects, { obj_id = obj_id, width = scaled_width })
         current_x = current_x + scaled_width + scaled_spacing
+
+        ::continue::
     end
+
 
     player_data.active_displays[display_id] = display_data
     return display_id
@@ -502,6 +556,8 @@ end
 function FontSystem:getTextWidth(text, font_name, scale)
     font_name = font_name or "THICK"
     scale = scale or 2.0
+    text = normalize_text(text)
+
     
     local char_widths = self.char_widths[font_name] or self.char_widths.THICK
     local total_width = 0
@@ -511,7 +567,8 @@ function FontSystem:getTextWidth(text, font_name, scale)
     local scaled_spacing = base_spacing * scale
     
     for i = 1, #text do
-        local char = text:sub(i, i)
+        local raw = text:sub(i, i)
+        local char = normalize_glyph(raw) or raw
         local char_width = char_widths[char] or char_widths["A"] or 6
         total_width = total_width + (char_width * scale) + scaled_spacing
     end

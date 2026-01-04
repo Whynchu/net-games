@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="isometric" renderorder="right-down" width="40" height="40" tilewidth="64" tileheight="32" infinite="0" nextlayerid="14" nextobjectid="95">
+<map version="1.10" tiledversion="1.11.2" orientation="isometric" renderorder="right-down" width="40" height="40" tilewidth="64" tileheight="32" infinite="0" nextlayerid="14" nextobjectid="96">
  <properties>
   <property name="Background Animation" value="/server/assets/demo/clockman.animation"/>
   <property name="Background Texture" value="/server/assets/demo/clockman.png"/>
@@ -127,6 +127,9 @@
    <point/>
   </object>
   <object id="94" name="prog_white" x="1110.59" y="373.747">
+   <point/>
+  </object>
+  <object id="95" name="prog_default" x="470.75" y="441.25">
    <point/>
   </object>
  </objectgroup>
