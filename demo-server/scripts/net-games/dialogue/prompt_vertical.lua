@@ -544,43 +544,76 @@ function PromptMenuInstance:do_cancel()
   self:select_current()
 end
 
+local function set_textbox_indicator_enabled(player_id, box_id, enabled)
+  local bd = Displayer.Text.getTextBoxData(player_id, box_id)
+  if not bd or not bd.backdrop then return end
+  bd.backdrop.indicator = bd.backdrop.indicator or {}
+  bd.backdrop.indicator.enabled = enabled and true or false
+end
+
+
 function PromptMenuInstance:update(_dt)
   local player_id = self.player_id
   local st = Displayer.Text.getTextBoxState(player_id, self.box_id)
 
   -- While printing: allow hold-confirm to fast-forward textbox; menu locked
-  if st == "printing" then
-    Input.pop(player_id, "up")
-    Input.pop(player_id, "down")
-    Input.pop(player_id, "cancel")
+    if st == "printing" then
+      Input.pop(player_id, "up")
+      Input.pop(player_id, "down")
+      Input.pop(player_id, "cancel")
 
-    if Input.is_down(player_id, "confirm") then
-      Input.pop(player_id, "confirm")
-      Displayer.Text.advance_text_box(player_id, self.box_id)
-    end
-    return
-  end
+      -- PRE-DISABLE indicator when printing the FINAL page so it never "pops" on wait.
+      do
+        local bd = Displayer.Text.getTextBoxData(player_id, self.box_id)
+        local page_count = (bd and bd.pages) and #bd.pages or nil
+        local cur_page = bd and bd.current_page or nil
+        local is_last_page = (page_count and cur_page) and (cur_page >= page_count) or false
+        if is_last_page then
+          set_textbox_indicator_enabled(self.player_id, self.box_id, false)
+        end
+      end
 
-  -- While waiting but textbox has more pages: confirm advances pages
-  if (st == "waiting") and (self.state == STATE.TEXT) then
-    if Input.pop(player_id, "confirm") then
-      Displayer.Text.advance_text_box(player_id, self.box_id)
-      Input.consume(player_id)
-      Input.require_release(player_id, { "confirm" })
+      if Input.is_down(player_id, "confirm") then
+        Input.pop(player_id, "confirm")
+        Displayer.Text.advance_text_box(player_id, self.box_id)
+      end
       return
     end
 
-    -- If we’re “waiting” and there are no more pages, textbox state usually becomes "completed".
-    -- Some builds still report "waiting" on final page; we’ll treat waiting as ready too.
-    -- We only become ready when the textbox has reached a stable wait/completed state.
-    self:become_ready()
-    return
-  end
 
-  if st == "completed" and self.state == STATE.TEXT then
-    self:become_ready()
-    return
-  end
+    -- While waiting: advance pages.
+    -- SPECIAL CASE: if we're on the final page, auto-advance once to clear the indicator,
+    -- then unlock menu immediately (keeps textbox + anchor alive).
+    if (st == "waiting") and (self.state == STATE.TEXT) then
+      -- lock menu input while textbox is mid-script
+      Input.pop(player_id, "up")
+      Input.pop(player_id, "down")
+      Input.pop(player_id, "cancel")
+
+      local bd = Displayer.Text.getTextBoxData(player_id, self.box_id)
+      local page_count = (bd and bd.pages) and #bd.pages or nil
+      local cur_page = bd and bd.current_page or nil
+      local is_last_page = (page_count and cur_page) and (cur_page >= page_count) or false
+
+      if is_last_page then
+        -- We are done printing the question. Keep the textbox OPEN,
+        -- hide the indicator, and pass control to the menu.
+        set_textbox_indicator_enabled(self.player_id, self.box_id, false)
+        self:become_ready()
+        return
+      end
+
+      -- not last page: confirm advances normally
+      if Input.pop(player_id, "confirm") then
+        Displayer.Text.advance_text_box(player_id, self.box_id)
+        Input.consume(player_id)
+        Input.require_release(player_id, { "confirm" })
+        return
+      end
+
+      return
+    end
+
 
   -- MENU INPUT
   if self.state ~= STATE.MENU then
@@ -667,6 +700,7 @@ function PromptVertical.close(player_id, _reason, opts)
   if not keep then
     Displayer.Text.closeTextBox(player_id, inst.box_id)
   else
+    set_textbox_indicator_enabled(player_id, inst.box_id, true)
     -- Handoff: keep textbox alive but swallow inputs so next dialogue doesn’t auto-advance
     Input.consume(player_id)
     Input.clear_require_release(player_id, { "confirm", "cancel" })
