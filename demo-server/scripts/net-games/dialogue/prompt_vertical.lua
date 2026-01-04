@@ -320,15 +320,16 @@ function PromptMenuInstance:new(player_id, opts)
   -- Gate: don't animate menu until textbox finishes opening
   o.wait_textbox_open_idle = true
 
+  o.menu_contents_pending = true
 
   -- OPEN anim timing (must outlive a single tick)
   o.menu_bg_open_t = 0
-  o.menu_bg_open_total = 0.58 -- 0.04*5 + 0.20 (from your .animation)
+  o.menu_bg_open_total = 0.16 -- 0.04*5 + 0.20 (from your .animation)
   o.menu_bg_open_playing = false
 
   -- CLOSE anim timing (must outlive a single tick)
   o.menu_bg_close_t = 0
-  o.menu_bg_close_total = 0.16 -- your CLOSE: 0.04*5 + 0.40 = 0.60
+  o.menu_bg_close_total = 0.11 -- your CLOSE: 0.04*5 + 0.40 = 0.60
   o.menu_bg_close_playing = false
 
   -- Close pipeline
@@ -339,11 +340,12 @@ function PromptMenuInstance:new(player_id, opts)
 
 
     o:render_textbox()
-      -- NOTE: menu window should not draw/animate until textbox is OPEN_IDLE (gate in update()).
-      o:update_scroll_for_selection(true)
-      o:render_menu_contents(true)
 
-      return o
+    -- Don't draw contents yet. Let OPEN finish first.
+    o.menu_contents_pending = true
+
+    return o
+
     end
 
 function PromptMenuInstance:render_textbox()
@@ -565,6 +567,17 @@ end
 
 
 function PromptMenuInstance:render_menu_contents(force)
+-- Hard gate: nothing should render until the menu bg finished OPEN -> OPEN_IDLE
+if self.menu_bg_open_playing or self.menu_bg_needs_open then
+  -- ensure nothing lingering
+  self:clear_menu_text()
+  erase_sprite(self.player_id, self.draw.hilite)
+  erase_sprite(self.player_id, self.draw.cursor)
+  erase_sprite(self.player_id, self.draw.scroll)
+  return
+end
+
+
   local L = self.layout
   local x0, y0 = self:menu_origin()
 
@@ -691,9 +704,16 @@ function PromptMenuInstance:become_ready()
   -- Reset bob so it doesn't start mid-wave
   self.cursor_phase = 0
 
-  -- Make sure selection is in view and overlays render immediately
-  self:update_scroll_for_selection(true)
-  self:render_menu_contents(true)
+  -- Delay contents until OPEN finishes.
+  -- BUT: if OPEN already finished (common when question is 1 page),
+  -- draw contents immediately or they'll never appear.
+  if self.menu_bg_open_playing then
+    self.menu_contents_pending = true
+  else
+    self.menu_contents_pending = false
+    self:update_scroll_for_selection(true)
+    self:render_menu_contents(true)
+  end
 
   -- Avoid carry-press from dialogue confirm spamming into menu selection
   local held = {}
@@ -824,6 +844,13 @@ function PromptMenuInstance:update(_dt)
         L.scale,
         "OPEN_IDLE"
       )
+            -- Now that the menu window is fully open, draw text + scrollbar/cursor once
+      if self.menu_contents_pending then
+        self.menu_contents_pending = false
+        self:update_scroll_for_selection(true)
+        self:render_menu_contents(true)
+      end
+
     end
   end
 

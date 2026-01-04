@@ -26,7 +26,7 @@ assert(bot_pos, "[prog_vert_prompt] Missing Tiled object named '" .. obj_name ..
 -- Bot creation (the overworld NPC)
 --=====================================================
 local bot_id = Net.create_bot({
-  name = "PROG.EXE",
+  name = "THE VERTICAL PROMPT PROG",
   area_id = area_id,
   texture_path = "/server/assets/ow/prog/prog_ow.png",
   animation_path = "/server/assets/ow/prog/prog_ow.animation",
@@ -197,7 +197,7 @@ Net:on("actor_interaction", function(event)
     ui = build_ui_config("prog_vert_prompt_box"),
     layout = build_layout_config(),
 
-    question = "DEFAULT PROG ONLINE{p_2}\nSIR,{p_2.2} This is the very definition of overkill... BUT LETS TAKE A LOOK SHALL WE?!",
+    question = "Hey! Select one of my options for... Stuff.",
     options = build_options(),
     default_index = 1,
 
