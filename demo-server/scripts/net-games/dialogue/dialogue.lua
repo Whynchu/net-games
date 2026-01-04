@@ -5,6 +5,7 @@ local Displayer = require("scripts/net-games/displayer/displayer")
 local Input     = require("scripts/net-games/input/input")
 local C         = require("scripts/net-games/dialogue/constants")
 local Prompt    = require("scripts/net-games/dialogue/prompt")
+local PromptVertical = require("scripts/net-games/dialogue/prompt_vertical")
 
 
 local Dialogue = {}
@@ -216,6 +217,10 @@ end
 
 function Dialogue.prompt_yesno(player_id, opts)
   return Prompt.yesno(player_id, opts)
+end
+
+function Dialogue.prompt_menu(player_id, opts)
+  return PromptVertical.menu(player_id, opts)
 end
 
 function Dialogue.start(player_id, script, opts)
