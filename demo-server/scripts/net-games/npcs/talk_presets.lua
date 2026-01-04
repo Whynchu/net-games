@@ -123,10 +123,21 @@ P.boxes = {
 -- Frame dye presets (only used with panel frame overlay style)
 -- ----------------------------
 P.frames = {
-  lime   = { r = 80,  g = 255, b = 80,  a = 255, color_mode = 2 },
-  red    = { r = 255, g = 80,  b = 80,  a = 255, color_mode = 2 },
-  purple = { r = 200, g = 80,  b = 255, a = 255, color_mode = 2 },
+  lime          = { r = 80,  g = 255, b = 80,  a = 255, color_mode = 2 },
+  red           = { r = 255, g = 80,  b = 80,  a = 255, color_mode = 2 },
+  purple        = { r = 200, g = 80,  b = 255, a = 255, color_mode = 2 },
+
+  turquoise     = { r = 80,  g = 230, b = 200, a = 255, color_mode = 2 },
+  pink          = { r = 255, g = 120, b = 200, a = 255, color_mode = 2 },
+  emerald       = { r = 60,  g = 200, b = 120, a = 255, color_mode = 2 },
+  sapphire      = { r = 80,  g = 120, b = 255, a = 255, color_mode = 2 },
+  yellow        = { r = 255, g = 220, b = 80,  a = 255, color_mode = 2 },
+  orange        = { r = 255, g = 160, b = 80,  a = 255, color_mode = 2 },
+
+  charcoal_grey = { r = 70,  g = 70,  b = 70,  a = 255, color_mode = 2 },
+  white         = { r = 255, g = 255, b = 255, a = 255, color_mode = 2 },
 }
+
 
 -- ----------------------------
 -- High-level “preset packs” (what creators should pick)

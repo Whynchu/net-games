@@ -12,5 +12,7 @@ Talk.npc({
     "Hey!{p_0.5} Look at that!",
     "Dyed frames!",
     "What a neat trick...",
-  }
+  },
+  ui = { nameplate = { debug = false } }
+
 })

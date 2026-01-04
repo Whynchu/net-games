@@ -81,6 +81,8 @@ local function build_ui(cfg, bot_name, opts)
   deep_merge(ui.backdrop, box.backdrop)
 
   -- Frame dye optional: switches backdrop style + applies tint values
+  -- We ALSO want to propagate this to the nameplate (later), so keep a resolved table.
+  local resolved_frame = nil
   if cfg.frame then
     local frame = Presets.frames[cfg.frame] or cfg.frame
     ui.backdrop.style = "textbox_panel_frame_tint"
@@ -90,6 +92,7 @@ local function build_ui(cfg, bot_name, opts)
       ui.backdrop.b = frame.b
       ui.backdrop.a = frame.a
       ui.backdrop.color_mode = frame.color_mode
+      resolved_frame = frame
     end
   end
 
@@ -111,6 +114,17 @@ local function build_ui(cfg, bot_name, opts)
     if type(np) == "table" then
       ui.nameplate = shallow_copy(np)
       ui.nameplate.text = ui.nameplate.text or bot_name
+
+      -- NEW: if textbox frame dye was requested, apply same dye to nameplate overlay frame
+      -- (your nameplate.lua reads ui.nameplate.frame.{r,g,b,a,color_mode})
+      if resolved_frame then
+        ui.nameplate.frame = ui.nameplate.frame or {}
+        ui.nameplate.frame.r = resolved_frame.r
+        ui.nameplate.frame.g = resolved_frame.g
+        ui.nameplate.frame.b = resolved_frame.b
+        ui.nameplate.frame.a = resolved_frame.a
+        ui.nameplate.frame.color_mode = resolved_frame.color_mode
+      end
     end
   end
 
@@ -149,6 +163,7 @@ local function build_ui(cfg, bot_name, opts)
 
   return ui
 end
+
 
 --=====================================================
 -- Talk API (what authors should use)

@@ -26,6 +26,7 @@ require("scripts/net-games/npcs/prog_prompt_dialogue")
 require("scripts/net-games/npcs/prog_prompt_dialogue_2")
 require("scripts/net-games/npcs/prog_basic_nameplate")
 require("scripts/net-games/npcs/prog_talk_dialogue")
+require("scripts/net-games/npcs/prog_talk_colors")
 -------------------------------------------
 -- DEMO CODE FOR NPC THAT GIVES COSMETIC --
 -------------------------------------------
