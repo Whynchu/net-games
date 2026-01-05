@@ -318,6 +318,12 @@ function PromptMenuInstance:new(player_id, opts)
   o.question = tostring(opts.question or "Choose:")
   o.options  = opts.options or { { text = "Exit" } }
 
+  -- Cache for menu text redraw (prevents flicker)
+  o._text_cache_top = nil
+  o._text_cache_rows = nil
+  o._text_cache_total = nil
+
+
   -- Normalize options to { text=..., id=..., value=... }
   for i = 1, #o.options do
     local v = o.options[i]
@@ -361,8 +367,10 @@ function PromptMenuInstance:new(player_id, opts)
     scroll    = base .. "_menu_scroll",
   }
 
-  -- Text display IDs we create via FontSystem:drawText (store returned ids to erase)
-  o.text_displays = {}
+  -- Stable text display IDs (one per visible row) to prevent flicker.
+  -- We reuse these IDs and redraw in-place instead of erasing/recreating every move.
+  o.menu_text_ids = {}
+
   -- Cursor bob state (used only when menu input is active)
   o.cursor_phase  = 0
   o.cursor_base_x = nil
@@ -582,16 +590,21 @@ function PromptMenuInstance:render_menu_window()
       anim,
       L.frame
     )
-
 end
-
 
 function PromptMenuInstance:clear_menu_text()
-  for _, id in ipairs(self.text_displays) do
+  if not self.menu_text_ids then
+    self.menu_text_ids = {}
+    return
+  end
+
+  for _, id in ipairs(self.menu_text_ids) do
     FontSystem:eraseTextDisplay(self.player_id, id)
   end
-  self.text_displays = {}
+
+  self.menu_text_ids = {}
 end
+
 
 function PromptMenuInstance:update_scroll_for_selection(force)
   local L = self.layout
@@ -678,7 +691,13 @@ function PromptMenuInstance:render_menu_contents(force)
 -- Hard gate: nothing should render until the menu bg finished OPEN -> OPEN_IDLE
 if self.menu_bg_open_playing or self.menu_bg_needs_open then
   -- ensure nothing lingering
-  self:clear_menu_text()
+  if self.menu_text_ids and #self.menu_text_ids > 0 then
+    self:clear_menu_text()
+  end
+
+  self._text_cache_top = nil
+  self._text_cache_rows = nil
+  self._text_cache_total = nil
   erase_sprite(self.player_id, self.draw.hilite)
   erase_sprite(self.player_id, self.draw.cursor)
   erase_sprite(self.player_id, self.draw.scroll)
@@ -689,9 +708,37 @@ end
   local L = self.layout
   local x0, y0 = self:menu_origin()
 
-  -- Always redraw highlight/cursor/scroll when selection changes or forced.
-  -- Text displays: erase + redraw only when (force) or (scroll window changes) or (selection changes).
-  self:clear_menu_text()
+  -- Only redraw the option TEXT when the visible window changes.
+  -- Selection changes only move highlight/cursor, so keep text displays stable to prevent flicker.
+  local rows  = L.visible_rows
+  local total = #self.options
+  local top   = self.scroll_top_index
+  local sel   = self.selection_index
+
+  local redraw_text =
+    force
+    or (self._text_cache_top ~= top)
+    or (self._text_cache_rows ~= rows)
+    or (self._text_cache_total ~= total)
+
+  if redraw_text then
+    -- Keep a stable list of display IDs (one per visible row).
+    -- This prevents flicker caused by erase/recreate cycles.
+    if not self.menu_text_ids or #self.menu_text_ids ~= rows then
+      -- wipe any old row ids
+      self:clear_menu_text()
+      self.menu_text_ids = {}
+      for i = 1, rows do
+        self.menu_text_ids[i] = self.box_id .. "_menu_row_" .. tostring(i)
+      end
+    end
+
+    self._text_cache_top = top
+    self._text_cache_rows = rows
+    self._text_cache_total = total
+  end
+
+
 
   local rows = L.visible_rows
   local total = #self.options
@@ -705,26 +752,32 @@ end
   local cx = x0 + (L.padding_x or 0)
   local cy = y0 + (L.padding_y or 0)
 
-  -- Draw each visible row text
-  for i = 0, rows - 1 do
-    local idx = top + i
-    if idx > total then break end
+  if redraw_text then
+    for i = 0, rows - 1 do
+      local idx = top + i
+      local tx = cx
+      local ty = cy + (i * row_h)
 
-    local text = tostring(self.options[idx].text or "")
-    local tx = cx
-    local ty = cy + (i * row_h)
+      local display_id = self.menu_text_ids[i + 1]
 
-    local display_id = FontSystem:drawText(
-      self.player_id,
-      nil,
-      text,
-      tx,
-      ty,
-      (L.z + 2),
-      L.font,
-      scale
-    )
-    if display_id then table.insert(self.text_displays, display_id) end
+      if idx <= total then
+        local text = tostring(self.options[idx].text or "")
+        FontSystem:drawTextWithId(
+          self.player_id,
+          text,
+          tx,
+          ty,
+          L.font,
+          scale,
+          (L.z + 2),
+          display_id
+        )
+      else
+        -- If fewer items than rows, erase the unused row display
+        FontSystem:eraseTextDisplay(self.player_id, display_id)
+        self.menu_row_last_len[i + 1] = 0
+      end
+    end
   end
 
   -- Highlight + cursor should only be visible once the menu is actually unlocked
@@ -1065,11 +1118,13 @@ function PromptMenuInstance:update(_dt)
       end
 
       if self.selection_index ~= prev then
-        local _ = self:update_scroll_for_selection(false)
+        local sc_changed = self:update_scroll_for_selection(false)
         play_cursor_move_sfx(player_id)
-        self:render_menu_contents(true)
+        -- Only force redraw when the visible page window changed.
+        self:render_menu_contents(sc_changed)
       end
       return
+
     end
 
     if Input.pop(player_id, "down") then
@@ -1082,11 +1137,12 @@ function PromptMenuInstance:update(_dt)
       end
 
       if self.selection_index ~= prev then
-        local _ = self:update_scroll_for_selection(false)
+        local sc_changed = self:update_scroll_for_selection(false)
         play_cursor_move_sfx(player_id)
-        self:render_menu_contents(true)
+        self:render_menu_contents(sc_changed)
       end
       return
+
     end
 
 

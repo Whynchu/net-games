@@ -373,92 +373,116 @@ function isInAlphabet(str)
     return false
 end
 
--- NEW FUNCTION: Draw text with a specific display ID to avoid conflicts
 function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_order, display_id)
     font_name = font_name or "THICK"
     scale = scale or 2.0
     z_order = z_order or 100
     text = normalize_text(text)
 
-
     local player_data = self.player_fonts[player_id]
     if not player_data then return nil end
 
-    local display_data = {
-        font = font_name,
-        x = x,
-        y = y,
-        scale = scale,
-        z_order = z_order,
-        character_objects = {},
-        text = text
-    }
+    local existing = player_data.active_displays[display_id]
 
-    local current_x = x
     local char_widths = self.char_widths[font_name] or self.char_widths.THICK
-
     local base_spacing = 1
     local scaled_spacing = base_spacing * scale
 
-    for i = 1, #text do
-        local raw = text:sub(i, i)
-        local char = normalize_glyph(raw) or raw
+    local function build_and_draw(start_x, start_y)
+        local current_x = start_x
+        local obj_i = 0
 
-        -- BATTLE/WIDE are uppercase-y fonts (only affects letters)
-        if (font_name == "BATTLE" or font_name == "WIDE") and char:match("%a") then
-            char = char:upper()
+        -- ensure table exists
+        if not existing then
+            existing = {
+                font = font_name,
+                x = start_x, y = start_y,
+                scale = scale,
+                z_order = z_order,
+                character_objects = {},
+                text = ""
+            }
+            player_data.active_displays[display_id] = existing
         end
-
-        local char_width = char_widths[char] or char_widths["A"] or 6
-        local scaled_width = char_width * scale
-
-        -- Space: advance only (no sprite)
-        if char == " " then
-            current_x = current_x + scaled_width + scaled_spacing
-            goto continue
-        end
-
-        local obj_id = display_id .. "_char_" .. (10000 + i)
 
         local prefix = anim_prefix_for_font(font_name)
-        local state
-        if char == char:lower() and isInAlphabet(char) then
-            state = prefix .. "_LOWER_" .. char:upper()
-        else
-            state = prefix .. "_" .. char
+
+        -- Draw/update glyph sprites in place using stable obj ids
+        for i = 1, #text do
+            local raw = text:sub(i, i)
+            local char = normalize_glyph(raw) or raw
+
+            if (font_name == "BATTLE" or font_name == "WIDE") and char:match("%a") then
+                char = char:upper()
+            end
+
+            local char_width = char_widths[char] or char_widths["A"] or 6
+            local scaled_width = char_width * scale
+
+            -- Space: advance only (no sprite)
+            if char == " " then
+                current_x = current_x + scaled_width + scaled_spacing
+            else
+                obj_i = obj_i + 1
+                local obj_id = display_id .. "_char_" .. (10000 + obj_i)
+
+                local state
+                if char == char:lower() and isInAlphabet(char) then
+                    state = prefix .. "_LOWER_" .. char:upper()
+                else
+                    state = prefix .. "_" .. char
+                end
+
+                Net.player_draw_sprite(player_id, font_name, {
+                    id = obj_id,
+                    x = current_x,
+                    y = start_y,
+                    z = z_order,
+                    sx = scale,
+                    sy = scale,
+                    anim_state = state
+                })
+
+                existing.character_objects[obj_i] = { obj_id = obj_id, width = scaled_width }
+                current_x = current_x + scaled_width + scaled_spacing
+            end
         end
 
-        -- DEBUG: log any glyph that is not in the width table (usually encoding / punctuation issues)
-        if char ~= " " and not char_widths[char] then
-            dbg_unknown(font_name, raw, state, text, i)
+        -- Erase any leftover glyph sprites from the previous longer string
+        for j = obj_i + 1, #existing.character_objects do
+            local tail = existing.character_objects[j]
+            if tail and tail.obj_id then
+                Net.player_erase_sprite(player_id, tail.obj_id)
+            end
+            existing.character_objects[j] = nil
         end
 
+        existing.font = font_name
+        existing.x = start_x
+        existing.y = start_y
+        existing.scale = scale
+        existing.z_order = z_order
+        existing.text = text
 
-        Net.player_draw_sprite(player_id, font_name, {
-            id = obj_id,
-            x = current_x,
-            y = y,
-            z = z_order,
-            sx = scale,
-            sy = scale,
-            anim_state = state
-        })
-
-        table.insert(display_data.character_objects, {
-            obj_id = obj_id,
-            width = scaled_width
-        })
-
-        current_x = current_x + scaled_width + scaled_spacing
-
-        ::continue::
+        return display_id
     end
 
-    player_data.active_displays[display_id] = display_data
-    return display_id
+    -- If same text/style and same position: no-op
+    if existing
+        and existing.text == text
+        and existing.font == font_name
+        and existing.scale == scale
+        and existing.z_order == z_order
+        and existing.x == x
+        and existing.y == y
+    then
+        return display_id
+    end
+
+    -- If same text/style but moved: just redraw positions (still no erase)
+    -- If text/style changed: update in place + trim tail
+    return build_and_draw(x, y)
 end
-
-
 
 
 function FontSystem:drawText(player_id, text_id, text, x, y, z_order, font_name, scale)
