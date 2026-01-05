@@ -422,6 +422,14 @@ function PromptMenuInstance:render_textbox()
     wrap_opts = { allow_leading_spaces = true },
   }
 
+  -- IMPORTANT:
+  -- When reusing an existing textbox, passing nameplate again re-attaches it,
+  -- which erases + restarts the nameplate animation (looks like a reset).
+  if self.reuse_existing_box then
+    ops.nameplate = nil
+  end
+
+
     -- If the textbox already exists (ex: coming from a YES/NO prompt),
     -- reset it so we get fresh text in the SAME box without closing/reopening UI.
     if self.reuse_existing_box then
@@ -471,8 +479,8 @@ function PromptMenuInstance:render_textbox()
       ops
     )
   end
-
 end
+
 
 function PromptMenuInstance:menu_origin()
   local L = self.layout
