@@ -6,6 +6,7 @@
 local Direction = require("scripts/libs/direction")
 local Dialogue  = require("scripts/net-games/dialogue/dialogue")
 local Presets   = require("scripts/net-games/npcs/talk_presets")
+local MenuOptions  = require("scripts/net-games/npcs/menu_options")
 
 local Talk = {}
 
@@ -52,6 +53,12 @@ local function force_indicator_on(player_id, box_id)
   if bd and bd.backdrop and bd.backdrop.indicator then
     bd.backdrop.indicator.enabled = true
   end
+end
+
+local function get_talk_vert_menu()
+  -- Lazy require to avoid require-cycle:
+  -- talk.lua <-> talk_vert_menu.lua
+  return require("scripts/net-games/npcs/talk_vert_menu")
 end
 
 --=====================================================
@@ -164,6 +171,99 @@ local function build_ui(cfg, bot_name, opts)
   return ui
 end
 
+--=====================================================
+-- Vertical menu helpers (author-facing API)
+--=====================================================
+
+local function get_pack_from_cfg(cfg)
+  local pack_key = cfg.preset or cfg.pack or "prog"
+  return Presets.packs[pack_key] or Presets.packs.prog
+end
+
+local function resolve_layout(cfg, menu_cfg)
+  local pack = get_pack_from_cfg(cfg)
+  local v = menu_cfg.layout
+  if v == nil then v = pack.vert_menu_layout end
+
+  if type(v) == "string" then
+    return Presets.get_vert_menu_layout(v) or {}
+  elseif type(v) == "table" then
+    return v
+  end
+  return {}
+end
+
+local function resolve_flow(cfg, menu_cfg)
+  local pack = get_pack_from_cfg(cfg)
+  local v = menu_cfg.flow
+  if v == nil then v = pack.vert_menu_flow end
+
+  local base = {}
+  if type(v) == "string" then
+    base = Presets.get_vert_menu_flow(v) or {}
+  elseif type(v) == "table" then
+    base = shallow_copy(v)
+  end
+
+  base.confirm = base.confirm or {}
+  base.post_select = base.post_select or {}
+  base.sfx = base.sfx or {}
+
+  return base
+end
+
+local function resolve_sfx(cfg, menu_cfg)
+  -- menu_cfg.sfx can be:
+  --   - string key into Presets.sfx_sets
+  --   - table {desc,confirm,close}
+  --   - nil => pack default
+  local pack = get_pack_from_cfg(cfg)
+  local v = menu_cfg.sfx
+  if v == nil then v = pack.vert_menu_sfx_set end
+
+  if type(v) == "string" then
+    return shallow_copy((Presets.sfx_sets and Presets.sfx_sets[v]) or {})
+  elseif type(v) == "table" then
+    return shallow_copy(v)
+  end
+  return {}
+end
+
+local function resolve_options(menu_cfg)
+  -- menu_cfg.options can be:
+  --   - full PromptVertical options array (already built)
+  --   - { count = N, prefix=..., pad=..., start=..., exit_text=..., exit_id=... }
+  --   - { list = { "A","B" }, exit_text=..., exit_id=... }
+  local o = menu_cfg.options
+
+  if type(o) ~= "table" then
+    return { { id = "exit", text = "Exit" } }
+  end
+
+  if o.count then
+    return MenuOptions.count(tonumber(o.count) or 1, o)
+  end
+
+  if o.list then
+    return MenuOptions.list(o.list, o)
+  end
+
+  -- assume caller gave a real PromptVertical options array
+  return o
+end
+
+local function infer_exit_index(options, explicit_exit_index)
+  if explicit_exit_index then return explicit_exit_index end
+  -- Prefer an option whose id == "exit" if present
+  for i = #options, 1, -1 do
+    if options[i] and options[i].id == "exit" then
+      return i
+    end
+  end
+  -- fallback: last option
+  return #options
+end
+
 
 --=====================================================
 -- Talk API (what authors should use)
@@ -218,6 +318,123 @@ function Talk.prompt_yesno(player_id, question, cfg, bot_name, handlers)
     on_cancel = handlers.on_cancel,
   })
 end
+
+-- Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
+-- Highest-level vertical menu wrapper:
+-- - prompts yes/no to open (optional)
+-- - opens TalkVertMenu with preset defaults
+-- - allows full override of layout/flow/sfx/ui/mug/frame
+function Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
+  cfg = cfg or {}
+  menu_cfg = menu_cfg or {}
+
+  -- Guard: if either Dialogue or menu wrapper is busy, do nothing.
+  if Dialogue.is_active(player_id) then return end
+  local TalkVertMenu = get_talk_vert_menu()
+  if TalkVertMenu.is_busy and TalkVertMenu.is_busy(player_id) then return end
+
+  local ui = build_ui(cfg, bot_name or (cfg.name or ""), { mode = "prompt" })
+
+  local options = resolve_options(menu_cfg)
+  local exit_index = infer_exit_index(options, menu_cfg.exit_index)
+
+  local layout = resolve_layout(cfg, menu_cfg)
+  local flow = resolve_flow(cfg, menu_cfg)
+  local sfx = resolve_sfx(cfg, menu_cfg)
+
+  -- Apply SFX defaults into flow.sfx but allow caller to override per-call
+  flow.sfx = flow.sfx or {}
+  for k, v in pairs(sfx) do
+    if flow.sfx[k] == nil then
+      flow.sfx[k] = v
+    end
+  end
+
+  -- Text/content is always author-supplied, but we provide safe fallbacks.
+  -- These can be overridden via menu_cfg.texts.{...}
+  local texts = menu_cfg.texts or {}
+  flow.confirm = flow.confirm or {}
+  flow.post_select = flow.post_select or {}
+
+  if flow.confirm.text_format == nil then
+    flow.confirm.text_format = texts.confirm_format or 'Are you sure you want "%s"?'
+  end
+
+  if flow.post_select.text_format == nil then
+    flow.post_select.text_format = texts.post_select_format or 'You got "%s".'
+  end
+
+  if flow.after_yes_text == nil then
+    flow.after_yes_text = texts.after_yes
+  end
+  if flow.after_no_text == nil then
+    flow.after_no_text = texts.after_no
+  end
+  if flow.exit_goodbye_text == nil then
+    flow.exit_goodbye_text = texts.exit_goodbye
+  end
+
+  local function open_menu()
+    TalkVertMenu.open(player_id, bot_name or (cfg.name or ""), cfg, {
+      intro_text = menu_cfg.intro_text or "...",
+      options = options,
+      default_index = menu_cfg.default_index or 1,
+      cancel_behavior = menu_cfg.cancel_behavior or "jump_to_exit",
+      exit_index = exit_index,
+
+      layout = layout,
+      flow = flow,
+    })
+  end
+
+  -- Optional open prompt. If menu_cfg.open_question is nil/false, open immediately.
+  local q = menu_cfg.open_question
+  if q == nil then
+    q = "Do you wanna check out the vertical menu?"
+  end
+
+  if q == false then
+    open_menu()
+    return
+  end
+
+  Talk.prompt_yesno(player_id, q, cfg, bot_name, {
+    on_yes = function()
+      open_menu()
+    end,
+
+    on_no = function()
+      if type(menu_cfg.on_decline_open) == "function" then
+        -- If caller supplied a handler, they own it (but they should use from_prompt+reuse_existing_box if they show text)
+        menu_cfg.on_decline_open()
+        return
+      end
+
+      -- Default decline behavior:
+      -- If author provided a decline line, show it safely chained from the prompt.
+      local decline = nil
+      if menu_cfg.texts and menu_cfg.texts.decline_open then
+        decline = menu_cfg.texts.decline_open
+      end
+
+      if decline then
+        local next_cfg = shallow_copy(cfg)
+        next_cfg.from_prompt = true
+        next_cfg.reuse_existing_box = true
+        Talk.start(player_id, { decline }, next_cfg, bot_name)
+      end
+      -- If no decline text and no handler: do nothing (clean close).
+    end,
+
+    on_cancel = function()
+      if type(menu_cfg.on_cancel_open) == "function" then
+        menu_cfg.on_cancel_open()
+      end
+    end,
+  })
+
+end
+
 
 -- Talk.prompt_then_talk(player_id, question, yes_script, no_script, cfg, bot_name)
 function Talk.prompt_then_talk(player_id, question, yes_script, no_script, cfg, bot_name)

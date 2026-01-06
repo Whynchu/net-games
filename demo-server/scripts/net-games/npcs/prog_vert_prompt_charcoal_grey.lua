@@ -130,9 +130,21 @@ NPC.bind_confirm_interaction(bot_id, bot_pos, function(player_id)
     end,
 
     on_no = function()
-      -- Optional: say something when declining the initial menu
-      -- (you can remove this entire block if you want silence)
-      Talk.say(player_id, "Copy that. Staying idle.", TALK_CFG, BOT_NAME)
+      local next_cfg = {
+        area_id = TALK_CFG.area_id,
+        object = TALK_CFG.object,
+        box_id = TALK_CFG.box_id,
+        preset = TALK_CFG.preset,
+        frame = TALK_CFG.frame,
+        mug = TALK_CFG.mug,
+        nameplate = TALK_CFG.nameplate,
+      }
+
+      next_cfg.from_prompt = true
+      next_cfg.reuse_existing_box = true
+
+      Talk.start(player_id, { "No worries. Maybe next time." }, next_cfg, BOT_NAME)
     end,
+
   })
 end, { face = true })

@@ -199,6 +199,40 @@ function P.get_vert_menu_layout(key)
   return _shallow_copy(base)
 end
 
+-- ----------------------------
+-- Vertical menu flow defaults (behavior, not content)
+-- ----------------------------
+P.vert_menu_flows = {
+  prog_prompt = {
+    keep_menu_open = true,
+    lock_dim_alpha = 0.35,
+    hide_cursor_when_locked = true,
+
+    confirm = { enabled = true },
+    post_select = { enabled = true },
+
+    -- sfx is resolved via sfx_sets unless overridden per-call
+    sfx = {},
+  },
+}
+
+function P.get_vert_menu_flow(key)
+  local base = P.vert_menu_flows[key]
+  if not base then return nil end
+  return _shallow_copy(base)
+end
+
+
+-- ----------------------------
+-- SFX set presets (optional convenience)
+-- ----------------------------
+P.sfx_sets = {
+  card_desc = {
+    desc    = "/server/assets/net-games/sfx/card_desc.ogg",
+    confirm = "/server/assets/net-games/sfx/card_confirm.ogg",
+    close   = "/server/assets/net-games/sfx/card_desc_close.ogg",
+  },
+}
 
 -- ----------------------------
 -- High-level “preset packs” (what creators should pick)
@@ -209,6 +243,12 @@ P.packs = {
     box = "panel",
     mug = "prog",
     nameplate = "prog",
+
+    -- Vertical menu defaults (non-content)
+    vert_menu_layout = "prog_prompt",
+    vert_menu_sfx_set = "card_desc",
+    vert_menu_flow = "prog_prompt",
+
   },
 
   -- Same UI as prog (kept explicit so prompt can opt into it cleanly)
@@ -216,6 +256,11 @@ P.packs = {
     box = "panel",
     mug = "prog",
     nameplate = "prog",
+    -- Vertical menu defaults (non-content)
+    vert_menu_layout = "prog_prompt",
+    vert_menu_sfx_set = "card_desc",
+    vert_menu_flow = "prog_prompt",
+
   },
 }
 
