@@ -375,7 +375,7 @@ Net:on("tick", function()
 
           -- Phase 1 confirm -> show "Cool..." (NO indicator) then auto-return
           local ui = build_ui_config(box_id)
-          reset_box_text(player_id, box_id, ui, "Cool. Is there anything else you'd like?", false)
+          reset_box_text(player_id, box_id, ui, "Thank you!{p_1} Is there anything else you'd like?", false)
           p.phase = 2
         end
       end
