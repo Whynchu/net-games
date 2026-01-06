@@ -278,7 +278,8 @@ local function ensure_tick()
               player_id,
               p.box_id,
               p.ui,
-              (p.flow.after_text or "Thank you!{p_1} Is there anything else you'd like?"),
+              (p.flow.after_yes_text or p.flow.after_text or "Thank you!{p_1} Is there anything else you'd like?"),
+
               false
             )
             p.phase = 2
@@ -467,7 +468,7 @@ function TalkVertMenu.open(player_id, bot_name, talk_cfg, menu_cfg)
             player_id,
             box_id,
             ui,
-            (flow.after_text or "Is there anything else you'd like?"),
+            (flow.after_no_text or flow.after_text or "Is there anything else you'd like?"),
             false
           )
 

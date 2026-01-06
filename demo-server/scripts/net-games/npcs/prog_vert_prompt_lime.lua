@@ -144,7 +144,9 @@ Net:on("actor_interaction", function(event)
             skip_ids = { exit = true },
           },
 
-          after_text = "Is there anything else you'd like?",
+          after_yes_text = "Thank you!{p_1} Is there anything else you'd like?",
+          after_no_text = "Is there anything else you'd like?",
+
           exit_goodbye_text = "Thanks for stopping by!",
 
           sfx = {
