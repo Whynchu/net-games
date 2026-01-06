@@ -45,6 +45,11 @@ local pending_ack = {}
 -- (PromptVertical finalize disables indicator when keep_textbox=true).
 local exit_pending = {}
 
+-- goodbye_closing[player_id] = { box_id = "..." }
+-- Used to keep input locked until the goodbye textbox is fully removed (post-close animation).
+local goodbye_closing = {}
+
+
 --=====================================================
 -- Area / placement (must match your TMX object name)
 --=====================================================
@@ -247,9 +252,9 @@ local function build_layout_config()
 
     -- menu text intro animation
     text_intro_enabled = true,
-    text_intro_frames = 28,
+    text_intro_frames = 18,
     text_intro_stagger_frames = 12,
-    text_intro_slide_px = 12,
+    text_intro_slide_px = 6,
 
 
     scrollbar_x = 452,
@@ -309,6 +314,36 @@ end
 -- Tick: handle pending ACK flow + deferred EXIT goodbye
 --=====================================================
 Net:on("tick", function()
+--=====================================================
+-- Goodbye close: keep input locked until textbox is fully removed
+--=====================================================
+for player_id, g in pairs(goodbye_closing) do
+  local box_id = g.box_id or "prog_vert_pink_box"
+
+  -- While closing exists, stay locked and swallow inputs
+  if Net.lock_player_input then
+    pcall(function() Net.lock_player_input(player_id) end)
+  end
+  Input.consume(player_id)
+  Input.swallow(player_id, 0.05)
+
+  -- True "done" check: textbox data no longer exists
+  local bd = Displayer.Text.getTextBoxData(player_id, box_id)
+  if not bd then
+    goodbye_closing[player_id] = nil
+
+    if Net.unlock_player_input then
+      pcall(function() Net.unlock_player_input(player_id) end)
+    end
+
+    -- One more swallow so the release doesn't instantly re-trigger interaction
+    Input.consume(player_id)
+    Input.clear_require_release(player_id, { "confirm", "cancel" })
+    Input.require_release(player_id, { "confirm", "cancel" })
+    Input.swallow(player_id, 0.12)
+  end
+end
+
   -- Fire deferred EXIT goodbye only after PromptVertical fully finalized close.
   for player_id, ex in pairs(exit_pending) do
     if not (PromptVertical.instances and PromptVertical.instances[player_id]) then
@@ -349,34 +384,36 @@ Net:on("tick", function()
 
         pending_ack[player_id] = nil
       end
-
       -- While printing, allow confirm to fast-forward
-      if st == "printing" and Input.pop(player_id, "confirm") then
-        Displayer.Text.advance_text_box(player_id, p.box_id)
-        Input.consume(player_id)
-        Input.require_release(player_id, { "confirm" })
+      if st == "printing" then
+        if Input.pop(player_id, "confirm") then
+          Displayer.Text.advance_text_box(player_id, p.box_id)
+          Input.consume(player_id)
+          Input.require_release(player_id, { "confirm" })
+        end
 
       -- When waiting (indicator), confirm advances the ack phase
-      elseif st == "waiting" and Input.pop(player_id, "confirm") then
-        Input.consume(player_id)
-        Input.clear_require_release(player_id, { "confirm", "cancel" })
-        Input.swallow(player_id, 0.10)
+      elseif st == "waiting" then
+        if Input.pop(player_id, "confirm") then
+          Input.consume(player_id)
+          Input.clear_require_release(player_id, { "confirm", "cancel" })
+          Input.swallow(player_id, 0.10)
 
-        local box_id = p.box_id
+          local box_id = p.box_id
 
-        if p.phase == 1 then
-          -- EXIT: confirm closes textbox + returns control
           if p.choice_text == "exit" then
+            -- Start closing animation
             Displayer.Text.closeTextBox(player_id, box_id)
             pending_ack[player_id] = nil
 
-            if Net.unlock_player_input then
-              pcall(function() Net.unlock_player_input(player_id) end)
-            end
+            -- DO NOT unlock here. Keep input locked until the textbox is fully removed.
+            goodbye_closing[player_id] = { box_id = box_id }
 
-            -- avoid carry-press into movement after closing
+            -- Eat carry-press so we can't re-interact during the close window
             Input.consume(player_id)
+            Input.clear_require_release(player_id, { "confirm", "cancel" })
             Input.require_release(player_id, { "confirm", "cancel" })
+            Input.swallow(player_id, 0.12)
             return
           end
 
@@ -386,9 +423,10 @@ Net:on("tick", function()
           p.phase = 2
         end
       end
-    end
-  end
-end)
+    end -- closes: else of `if not st then ... else ...`
+  end   -- closes: for player_id, p in pairs(pending_ack) do
+end)    -- closes: Net:on("tick", function()
+
 
 --=====================================================
 -- Open the vertical menu (Goal_1_5: keep textbox, reuse existing box)
@@ -500,6 +538,11 @@ Net:on("actor_interaction", function(event)
 
   local player_id = event.player_id
   if Dialogue.is_active(player_id) then return end
+
+  -- If the goodbye textbox is still closing, ignore interaction (prevents mash-A softlock window)
+  if goodbye_closing[player_id] then return end
+  local st = Displayer.Text.getTextBoxState(player_id, "prog_vert_pink_box")
+  if st == "closing" then return end
 
   -- Prevent re-entrant interaction spam from force-replacing prompts/menus
   if pending_ack[player_id] then return end
