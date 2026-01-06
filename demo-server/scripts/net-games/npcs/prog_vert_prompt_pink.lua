@@ -39,6 +39,7 @@ local Input     = require("scripts/net-games/input/input")
 --   choice_text = "...",
 -- }
 local pending_ack = {}
+local pending_exit = {}
 
 
 
@@ -253,8 +254,12 @@ local function build_layout_config()
 end
 
 Net:on("tick", function()
+  --=====================================================
+  -- Selection/post-text flow (pending_ack)
+  --=====================================================
   for player_id, p in pairs(pending_ack) do
     local st = Displayer.Text.getTextBoxState(player_id, p.box_id)
+
     if not st then
       pending_ack[player_id] = nil
     else
@@ -271,45 +276,93 @@ Net:on("tick", function()
         end
 
         pending_ack[player_id] = nil
-        -- continue; (no return needed)
+      else
+        -- While printing, allow confirm to fast-forward
+        if st == "printing" and Input.pop(player_id, "confirm") then
+          Displayer.Text.advance_text_box(player_id, p.box_id)
+          Input.consume(player_id)
+          Input.require_release(player_id, { "confirm" })
+
+        -- When waiting on the indicator, confirm advances the ack phase
+        elseif st == "waiting" and Input.pop(player_id, "confirm") then
+          Input.consume(player_id)
+          Input.clear_require_release(player_id, { "confirm", "cancel" })
+          Input.swallow(player_id, 0.10)
+
+          local box_id = p.box_id
+
+          if p.phase == 1 then
+            -- Phase 1 confirm -> show "Cool..." (NO indicator) and then auto-return when done printing
+            local ui = build_ui_config(box_id)
+            reset_box_text(player_id, box_id, ui, "Cool. Is there anything else you'd like?")
+
+            -- We do NOT want an indicator for "Cool..."
+            set_textbox_indicator(player_id, box_id, false)
+
+            p.phase = 2
+          end
+          -- Phase 2 confirm is intentionally ignored; auto-return happens above on st=="waiting"
+        end
       end
-
-
-
-      -- While printing, allow confirm to fast-forward
-      if st == "printing" and Input.pop(player_id, "confirm") then
-        Displayer.Text.advance_text_box(player_id, p.box_id)
-        Input.consume(player_id)
-        Input.require_release(player_id, { "confirm" })
-
-      -- When waiting on the indicator, confirm advances the ack phase
-      elseif st == "waiting" and Input.pop(player_id, "confirm") then
-        Input.consume(player_id)
-        Input.clear_require_release(player_id, { "confirm", "cancel" })
-        Input.swallow(player_id, 0.10)
-
-        local menu = p.menu
-        local box_id = p.box_id
-
-        if p.phase == 1 then
-          -- Phase 1 confirm -> show "Cool..." (NO indicator) and then auto-return when done printing
-          local ui = build_ui_config(box_id)
-          reset_box_text(player_id, box_id, ui, "Cool. Is there anything else you'd like?")
-
-          -- We do NOT want an indicator for "Cool..."
-          set_textbox_indicator(player_id, box_id, false)
-
-          p.phase = 2
-
-        else
-          -- Phase 2 should NOT wait for confirm anymore.
-          -- We'll auto-return once printing finishes (handled below).
-        end
-        end
     end
   end
-end)
+  --=====================================================
+  -- EXIT goodbye flow (pending_exit)
+  --=====================================================
+  for player_id, p in pairs(pending_exit) do
+    local box_id = p.box_id
 
+    -- Truth: if TextBoxData is gone, the box is fully removed (closing animation finished)
+    local bd = Displayer.Text.getTextBoxData(player_id, box_id)
+    local st = Displayer.Text.getTextBoxState(player_id, box_id)
+
+    -- If we've already started closing, swallow inputs until it's ACTUALLY gone,
+    -- then unlock and clean up.
+    if p.closing then
+      Input.consume(player_id)
+      Input.swallow(player_id, 0.05)
+
+      if not bd then
+        pending_exit[player_id] = nil
+        if Net.unlock_player_input then pcall(function() Net.unlock_player_input(player_id) end) end
+      end
+
+      goto continue_pending_exit
+    end
+
+    -- If the box vanished unexpectedly, clean up and unlock.
+    if not bd or not st then
+      pending_exit[player_id] = nil
+      if Net.unlock_player_input then pcall(function() Net.unlock_player_input(player_id) end) end
+      goto continue_pending_exit
+    end
+
+    -- Keep player locked while goodbye textbox exists
+    if Net.lock_player_input then pcall(function() Net.lock_player_input(player_id) end) end
+
+    -- PromptVertical._finalize_close(keep_textbox=true) disables indicator;
+    -- force it on for the goodbye line.
+    set_textbox_indicator(player_id, box_id, true)
+
+    -- Allow confirm to fast-forward printing
+    if st == "printing" and Input.pop(player_id, "confirm") then
+      Displayer.Text.advance_text_box(player_id, box_id)
+      Input.consume(player_id)
+      Input.require_release(player_id, { "confirm" })
+
+    -- Confirm on waiting should begin closing, BUT DO NOT unlock yet.
+    elseif st == "waiting" and Input.pop(player_id, "confirm") then
+      Input.consume(player_id)
+      Input.clear_require_release(player_id, { "confirm", "cancel" })
+      Input.swallow(player_id, 0.10)
+
+      Displayer.Text.closeTextBox(player_id, box_id)
+      p.closing = true
+    end
+
+    ::continue_pending_exit::
+  end
+end)
 
 
 --=====================================================
@@ -391,12 +444,24 @@ local function open_vertical_menu(player_id, intro_text)
         -- EXIT behavior
         if choice and choice.id == "exit" then
           if MENU_FLOW.close_on_exit then
-            -- close menu + textbox (match Sapphire behavior)
-            PromptVertical.close(player_id, "exit", { keep_textbox = false })
-            -- (or just: PromptVertical.close(player_id, "exit"))
+            -- Freeze menu input immediately (no more cursor movement during close anim)
+            set_menu_locked(menu, true)
+
+            -- Close the vertical menu, but KEEP the textbox alive.
+            -- prompt_vertical.lua will swallow input a bit during close and (importantly) not show the indicator.
+            PromptVertical.close(player_id, "exit", { keep_textbox = true })
+
+            -- Immediately repurpose the textbox into a clean exit line with an indicator.
+            local ui = build_ui_config(box_id)
+            reset_box_text(player_id, box_id, ui, "Thanks for stopping by.")
+            set_textbox_indicator(player_id, box_id, true)
+
+            -- Drive the “press confirm to close textbox and restore control” flow in tick.
+            pending_exit[player_id] = { box_id = box_id, closing = false }
           end
           return
         end
+
 
 
       -- Lock menu immediately (visual + input)
