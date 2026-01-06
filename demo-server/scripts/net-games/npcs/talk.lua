@@ -313,4 +313,12 @@ function Talk.npc(cfg)
   return bot_id
 end
 
+--=====================================================
+-- Internal: expose UI builder for wrappers (vert menu, etc.)
+--=====================================================
+function Talk._build_ui(cfg, bot_name, opts)
+  return build_ui(cfg, bot_name, opts)
+end
+
+
 return Talk

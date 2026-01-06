@@ -152,6 +152,53 @@ P.frames = {
   white         = { r = 255, g = 255, b = 255, a = 255, color_mode = 2 },
 }
 
+-- ----------------------------
+-- Vertical menu layout presets (PromptVertical)
+-- ----------------------------
+local function _shallow_copy(t)
+  local o = {}
+  for k, v in pairs(t or {}) do o[k] = v end
+  return o
+end
+
+P.vert_menus = {
+  -- Matches ProgVertPromptPink build_layout_config()
+  prog_prompt = {
+    anchor = "textbox",
+    offset_x = 1,
+    offset_y = -199,
+
+    width = 160,
+    height = 64,
+
+    visible_rows = 5,
+    row_height = 14,
+    padding_x = 48,
+    padding_y = 4,
+
+    -- menu text intro animation (Pink parity)
+    text_intro_enabled = true,
+    text_intro_frames = 18,
+    text_intro_stagger_frames = 12,
+    text_intro_slide_px = 6,
+
+    scrollbar_x = 452,
+    scrollbar_y = 12,
+    scrollbar_h = 126,
+
+    highlight_inset_x = 12,
+    highlight_inset_y = 3,
+    cursor_offset_x = 16,
+    cursor_offset_y = 4,
+  },
+}
+
+function P.get_vert_menu_layout(key)
+  local base = P.vert_menus[key]
+  if not base then return nil end
+  return _shallow_copy(base)
+end
+
 
 -- ----------------------------
 -- High-level “preset packs” (what creators should pick)
