@@ -373,7 +373,7 @@ function isInAlphabet(str)
     return false
 end
 
-function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_order, display_id)
+function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_order, display_id, tint)
     font_name = font_name or "THICK"
     scale = scale or 2.0
     z_order = z_order or 100
@@ -433,7 +433,7 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
                     state = prefix .. "_" .. char
                 end
 
-                Net.player_draw_sprite(player_id, font_name, {
+                local spr_opts = {
                     id = obj_id,
                     x = current_x,
                     y = start_y,
@@ -441,7 +441,19 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
                     sx = scale,
                     sy = scale,
                     anim_state = state
-                })
+                }
+
+                -- Optional tint (used for dimming menu items, etc.)
+                if type(tint) == "table" then
+                    if tint.r then spr_opts.r = tint.r end
+                    if tint.g then spr_opts.g = tint.g end
+                    if tint.b then spr_opts.b = tint.b end
+                    if tint.a then spr_opts.a = tint.a end
+                    if tint.color_mode then spr_opts.color_mode = tint.color_mode end
+                end
+
+                Net.player_draw_sprite(player_id, font_name, spr_opts)
+
 
                 existing.character_objects[obj_i] = { obj_id = obj_id, width = scaled_width }
                 current_x = current_x + scaled_width + scaled_spacing

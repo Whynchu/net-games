@@ -351,8 +351,18 @@ function PromptMenuInstance:new(player_id, opts)
   -- (this avoids the createTextBox collision path and gives us "new dialogue" in same window)
   o.reuse_existing_box = (opts.reuse_existing_box == true)
 
-  o.on_select = opts.on_select or function(_choice, _index) end
-  o.on_cancel = opts.on_cancel or function() end
+    o.on_select = opts.on_select or function(_choice, _index) end
+    o.on_cancel = opts.on_cancel or function() end
+
+    -- Goal_1_5 additions:
+    o.keep_menu_open = (opts.keep_menu_open == true)
+    o.selection_behavior = tostring(opts.selection_behavior or "close_then_callback")
+    o.on_choose = opts.on_choose -- optional: function(choice, index, menu)
+
+    o.lock_dim_alpha = tonumber(opts.lock_dim_alpha or 0.35) or 0.35
+    o.hide_cursor_when_locked = (opts.hide_cursor_when_locked ~= false)
+
+    o.locked = false
 
   o.state = STATE.TEXT
   o.ready_for_input = false
@@ -638,9 +648,47 @@ function PromptMenuInstance:update_scroll_for_selection(force)
   return force or changed
 end
 
-function PromptMenuInstance:menu_overlays_visible()
-  return (self.state == STATE.MENU) and (self.ready_for_input == true)
+local function set_textbox_indicator_enabled(player_id, box_id, enabled)
+  local bd = Displayer.Text.getTextBoxData(player_id, box_id)
+  if not bd or not bd.backdrop then return end
+  bd.backdrop.indicator = bd.backdrop.indicator or {}
+  bd.backdrop.indicator.enabled = enabled and true or false
 end
+
+
+function PromptMenuInstance:menu_overlays_visible()
+  return (self.state == STATE.MENU)
+     and (self.ready_for_input == true)
+     and (self.locked ~= true)
+end
+
+function PromptMenuInstance:set_locked(locked)
+  self.locked = (locked == true)
+
+  if self.locked then
+    self.ready_for_input = false
+
+    -- Hide textbox indicator while locked/menu-driven
+    set_textbox_indicator_enabled(self.player_id, self.box_id, false)
+
+    -- Cursor goes away when locked (Goal_1_5)
+    if self.hide_cursor_when_locked then
+      erase_sprite(self.player_id, self.draw.cursor)
+      self.cursor_base_x = nil
+      self.cursor_base_y = nil
+    end
+  else
+    self.ready_for_input = true
+
+    -- Still keep indicator off while menu exists (Goal_1_5)
+    set_textbox_indicator_enabled(self.player_id, self.box_id, false)
+  end
+
+  -- Force a redraw so dim/highlight updates immediately
+  self:update_scroll_for_selection(true)
+  self:render_menu_contents(true)
+end
+
 
 function PromptMenuInstance:update_cursor_bob(dt)
   if not self:menu_overlays_visible() then return end
@@ -770,6 +818,15 @@ end
 
       if idx <= total then
         local text = tostring(self.options[idx].text or "")
+        local tint = nil
+        if self.locked and (idx ~= sel) then
+          tint = {
+            r = 255, g = 255, b = 255,
+            a = math.floor(255 * (self.lock_dim_alpha or 0.35)),
+            color_mode = 2
+          }
+        end
+
         FontSystem:drawTextWithId(
           self.player_id,
           text,
@@ -778,8 +835,10 @@ end
           L.font,
           scale,
           (L.z + 2),
-          display_id
+          display_id,
+          tint
         )
+
       else
         -- If fewer items than rows, erase the unused row display
         FontSystem:eraseTextDisplay(self.player_id, display_id)
@@ -791,7 +850,8 @@ end
   -- Highlight + cursor should only be visible once the menu is actually unlocked
   local sel_row = sel - top
   if sel_row >= 0 and sel_row < rows then
-    if self:menu_overlays_visible() then
+    if (self.state == STATE.MENU) then
+
       -- Highlight bar (behind selected row)
       local hx = x0 + (L.highlight_inset_x or 0)
       local hy = cy + (sel_row * row_h) + ((L.highlight_inset_y or 0) * scale)
@@ -811,13 +871,19 @@ end
       self.cursor_base_x = curx
       self.cursor_base_y = cury
 
-      draw_sprite(
-        self.player_id, SPR.CURSOR,
-        self.draw.cursor,
-        curx, cury,
-        (L.z + 3),
-        L.scale
-      )
+        if not (self.locked and self.hide_cursor_when_locked) then
+          draw_sprite(
+            self.player_id, SPR.CURSOR,
+            self.draw.cursor,
+            curx, cury,
+            (L.z + 3),
+            L.scale
+          )
+        else
+          erase_sprite(self.player_id, self.draw.cursor)
+        end
+
+
     else
       -- Menu text is allowed to show, but overlays must not
       self.cursor_base_x = nil
@@ -877,20 +943,24 @@ end
 function PromptMenuInstance:become_ready()
   self.state = STATE.MENU
   self.ready_for_input = true
+  -- Menu is now driving progression; indicator should never show during menu lifetime
+  set_textbox_indicator_enabled(self.player_id, self.box_id, false)
+
 
   -- Reset bob so it doesn't start mid-wave
   self.cursor_phase = 0
 
-  -- Delay contents until OPEN finishes.
-  -- BUT: if OPEN already finished (common when question is 1 page),
-  -- draw contents immediately or they'll never appear.
-  if self.menu_bg_open_playing then
+  -- Goal_1_5: only draw contents once the menu window is actually ready.
+  -- If we render too early (menu_bg_needs_open still true), render_menu_contents()
+  -- hard-gates and never sets cursor_base_x/y, so the cursor won't appear until you move.
+  if self.menu_bg_open_playing or self.menu_bg_needs_open then
     self.menu_contents_pending = true
   else
     self.menu_contents_pending = false
     self:update_scroll_for_selection(true)
     self:render_menu_contents(true)
   end
+
 
   -- Avoid carry-press from dialogue confirm spamming into menu selection
   local held = {}
@@ -905,18 +975,25 @@ function PromptMenuInstance:become_ready()
   end
 end
 
-
 function PromptMenuInstance:select_current()
   local idx = self.selection_index
   local choice = self.options[idx]
 
-  -- Animate menu out, then finalize; callback will run after close completes
+  -- Goal_1_5: keep menu open and route selection to callback only
+  if self.selection_behavior == "callback_only" and type(self.on_choose) == "function" then
+    pcall(function()
+      self.on_choose(choice, idx, self)
+    end)
+    return
+  end
+
+  -- Default legacy behavior: animate close then callback
   self._post_close_cb = function()
     self.on_select(choice, idx)
   end
   self:start_close("select", self.keep_textbox)
-
 end
+
 
 function PromptMenuInstance:do_cancel()
   local beh = self.cancel_behavior or "jump_to_exit"
@@ -946,14 +1023,6 @@ function PromptMenuInstance:do_cancel()
   -- Already on exit: treat cancel as select
   self:select_current()
 end
-
-local function set_textbox_indicator_enabled(player_id, box_id, enabled)
-  local bd = Displayer.Text.getTextBoxData(player_id, box_id)
-  if not bd or not bd.backdrop then return end
-  bd.backdrop.indicator = bd.backdrop.indicator or {}
-  bd.backdrop.indicator.enabled = enabled and true or false
-end
-
 
 function PromptMenuInstance:update(_dt)
   local player_id = self.player_id
@@ -1113,6 +1182,18 @@ function PromptMenuInstance:update(_dt)
     return
   end
 
+  -- Goal_1_5: when locked, the menu remains visible but MUST NOT accept MENU input.
+    -- IMPORTANT: do NOT swallow confirm/cancel here, or sub-prompts / dialogue can never be confirmed.
+    if self.locked then
+      Input.pop(player_id, "up")
+      Input.pop(player_id, "down")
+      Input.pop(player_id, "left")
+      Input.pop(player_id, "right")
+      return
+    end
+
+
+
   local total = #self.options
   self:update_cursor_bob(_dt)
 
@@ -1206,11 +1287,13 @@ function PromptVertical._finalize_close(player_id, _reason, opts)
   if not keep then
     Displayer.Text.closeTextBox(player_id, inst.box_id)
   else
-    set_textbox_indicator_enabled(player_id, inst.box_id, true)
+    -- Goal_1_5: indicator should NOT appear when the menu closes but textbox stays
+    set_textbox_indicator_enabled(player_id, inst.box_id, false)
     Input.consume(player_id)
     Input.clear_require_release(player_id, { "confirm", "cancel" })
     Input.swallow(player_id, 0.10)
   end
+
 
   set_input_locked(player_id, false)
 

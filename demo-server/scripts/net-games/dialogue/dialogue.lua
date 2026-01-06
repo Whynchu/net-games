@@ -134,6 +134,12 @@ local function attach_tick()
 
       -- Textbox is fully gone ? NOW unlock input and clear instance
       if not bd then
+        -- Fire on_complete exactly once when the textbox is fully removed
+        if inst.on_complete and not inst._on_complete_ran then
+          inst._on_complete_ran = true
+          pcall(inst.on_complete)
+        end
+
         if inst.opts and inst.opts.input_mode == C.InputMode.DIALOGUE_OWNS_INPUT then
           set_input_locked(player_id, false)
         end
@@ -382,7 +388,12 @@ function Dialogue.start(player_id, script, opts)
     script = script,
     ui = ui,
     closing = false,
+
+    -- Goal_1_5: allow callers to run logic after the dialogue fully ends
+    on_complete = o.on_complete,
+    _on_complete_ran = false,
   }
+
 
   if o.debug then
     print("[Dialogue] start OK player=" .. tostring(player_id) .. " box_id=" .. tostring(box_id) .. " reuse=" .. tostring(can_reuse))

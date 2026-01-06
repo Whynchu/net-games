@@ -265,6 +265,8 @@ function PromptInstance:new(player_id, opts)
   --   "close"              : legacy behavior (B closes prompt + on_cancel)
   --   "ignore"             : B does nothing
   o.cancel_behavior = (opts and opts.cancel_behavior) or "select_no"
+  o.reuse_existing_box = (opts and opts.reuse_existing_box == true)
+
 
   o.ready_for_input = false
   o.selection = 1
@@ -370,25 +372,69 @@ function PromptInstance:render_initial()
     wrap_opts = { allow_leading_spaces = true },
   }
 
-  if Displayer.Text.create_text_box then
-    Displayer.Text.create_text_box(
-      player_id, self.box_id, text,
-      ui.x, ui.y, ui.w, ui.h,
-      ui.font, ui.scale, ui.z,
-      ui.backdrop,
-      ui.typing_speed,
-      ops
-    )
-  else
-    Displayer.Text.createTextBox(
-      player_id, self.box_id, text,
-      ui.x, ui.y, ui.w, ui.h,
-      ui.font, ui.scale, ui.z,
-      ui.backdrop,
-      ui.typing_speed,
-      ops
-    )
+  -- If we're reusing an existing textbox, don't reapply the nameplate (prevents flicker)
+  if self.reuse_existing_box then
+    ops.nameplate = nil
   end
+
+
+    -- If we're reusing an existing textbox (menu/dialogue already owns this box_id),
+  -- do NOT try to create a new one; reset it in-place.
+  local existing = Displayer.Text.getTextBoxData(player_id, self.box_id)
+
+  if self.reuse_existing_box and existing then
+    local x = existing.x or ui.x
+    local y = existing.y or ui.y
+    local w = existing.width  or existing.w or ui.w
+    local h = existing.height or existing.h or ui.h
+    local font  = existing.font  or ui.font
+    local scale = existing.scale or ui.scale
+    local z     = existing.z     or ui.z
+    local backdrop = existing.backdrop or ui.backdrop
+
+    if Displayer.Text.reset_text_box then
+      Displayer.Text.reset_text_box(
+        player_id, self.box_id, text,
+        x, y, w, h,
+        font, scale, z,
+        backdrop,
+        ui.typing_speed,
+        ops
+      )
+    else
+      Displayer.Text.resetTextBox(
+        player_id, self.box_id, text,
+        x, y, w, h,
+        font, scale, z,
+        backdrop,
+        ui.typing_speed,
+        ops
+      )
+    end
+  else
+    -- Normal path: create a brand new prompt box
+    if Displayer.Text.create_text_box then
+      Displayer.Text.create_text_box(
+        player_id, self.box_id, text,
+        ui.x, ui.y, ui.w, ui.h,
+        ui.font, ui.scale, ui.z,
+        ui.backdrop,
+        ui.typing_speed,
+        ops
+      )
+    else
+      Displayer.Text.createTextBox(
+        player_id, self.box_id, text,
+        ui.x, ui.y, ui.w, ui.h,
+        ui.font, ui.scale, ui.z,
+        ui.backdrop,
+        ui.typing_speed,
+        ops
+      )
+    end
+  end
+
+
 end
 
 
