@@ -284,6 +284,11 @@ local function normalize_layout(layout)
     scrollbar_h = layout.scrollbar_h or 40,
     thumb_min_h = layout.thumb_min_h or 6,
     thumb_w     = layout.thumb_w or 6, -- sprite scaled via sx
+     -- Text intro animation (optional; off by default)
+    text_intro_enabled        = (layout.text_intro_enabled == true),
+    text_intro_frames         = tonumber(layout.text_intro_frames or 20) or 20,
+    text_intro_stagger_frames = tonumber(layout.text_intro_stagger_frames or 3) or 3,
+    text_intro_slide_px       = tonumber(layout.text_intro_slide_px or 10) or 10, 
   }
 
   -- Safety: visible rows must be >= 1
@@ -392,6 +397,9 @@ function PromptMenuInstance:new(player_id, opts)
   o.wait_textbox_open_idle = true
 
   o.menu_contents_pending = true
+  -- Text intro animation state
+  o._text_intro_active = false
+  o._text_intro_t = 0
 
   -- OPEN anim timing (must outlive a single tick)
   o.menu_bg_open_t = 0
@@ -821,18 +829,39 @@ end
 
       if idx <= total then
         local text = tostring(self.options[idx].text or "")
-        local tint = nil
-        if self.locked and (idx ~= sel) then
-            tint = {
-              opacity = math.floor(255 * (self.lock_dim_alpha or 0.35))
-            }
 
+        -- Intro animation: per-row fade + slight slide from the right
+        local opacity = 255
+        local xoff = 0
+
+        if self._text_intro_active and self.layout.text_intro_enabled then
+          local dur = (tonumber(self.layout.text_intro_frames) or 20) / 60
+          local stagger = (tonumber(self.layout.text_intro_stagger_frames) or 3) / 60
+
+          local row_t = (self._text_intro_t or 0) - (i * stagger)
+          local p = 0
+          if row_t > 0 and dur > 0 then
+            p = clamp(row_t / dur, 0, 1)
+          end
+
+          -- smoothstep easing (nice and cheap)
+          local eased = p * p * (3 - 2 * p)
+
+          opacity = math.floor(255 * eased)
+          xoff = (tonumber(self.layout.text_intro_slide_px) or 10) * (1 - eased) * scale
         end
+
+        -- Preserve your locked-dim behavior by multiplying opacity
+        if self.locked and (idx ~= sel) then
+          opacity = math.floor(opacity * (self.lock_dim_alpha or 0.35))
+        end
+
+        local tint = { opacity = opacity }
 
         FontSystem:drawTextWithId(
           self.player_id,
           text,
-          tx,
+          tx + xoff,
           ty,
           L.font,
           scale,
@@ -840,6 +869,7 @@ end
           display_id,
           tint
         )
+
 
       else
         -- If fewer items than rows, erase the unused row display
@@ -941,6 +971,17 @@ end
   end
 end
 
+function PromptMenuInstance:start_text_intro()
+  if not (self.layout and self.layout.text_intro_enabled) then
+    self._text_intro_active = false
+    self._text_intro_t = 0
+    return
+  end
+
+  self._text_intro_active = true
+  self._text_intro_t = 0
+end
+
 
 function PromptMenuInstance:become_ready()
   self.state = STATE.MENU
@@ -959,8 +1000,15 @@ function PromptMenuInstance:become_ready()
     self.menu_contents_pending = true
   else
     self.menu_contents_pending = false
+
+    -- IMPORTANT:
+    -- Do NOT restart the intro here.
+    -- In your Pink flow, the menu opens while textbox types, so the intro already ran
+    -- when OPEN finished. become_ready() is just “unlock control / show overlays”.
     self:update_scroll_for_selection(true)
-    self:render_menu_contents(true)
+
+    -- Only redraw overlays; avoid forcing a full text redraw
+    self:render_menu_contents(false)
   end
 
 
@@ -1103,16 +1151,35 @@ function PromptMenuInstance:update(_dt)
           L.frame
         )
 
-            -- Now that the menu window is fully open, draw text + scrollbar/cursor once
+      -- Now that the menu window is fully open, draw text + scrollbar/cursor once
       if self.menu_contents_pending then
         self.menu_contents_pending = false
         self:update_scroll_for_selection(true)
+        self:start_text_intro()
         self:render_menu_contents(true)
       end
-
     end
   end
 
+  -- =====================================================
+  -- Text intro animation timing (fade/slide/cascade)
+  -- =====================================================
+  if self._text_intro_active then
+    local dt = _dt or 0
+    self._text_intro_t = (self._text_intro_t or 0) + dt
+
+    local dur = (tonumber(self.layout.text_intro_frames) or 20) / 60
+    local stagger = (tonumber(self.layout.text_intro_stagger_frames) or 3) / 60
+    local rows = tonumber(self.layout.visible_rows) or 5
+
+    local end_t = dur + math.max(0, (rows - 1) * stagger)
+    if self._text_intro_t >= end_t then
+      self._text_intro_active = false
+    end
+
+    -- Force redraw while intro is running so x/opacity updates each tick
+    self:render_menu_contents(true)
+  end
 
 
   -- While printing: allow hold-confirm to fast-forward textbox; menu locked

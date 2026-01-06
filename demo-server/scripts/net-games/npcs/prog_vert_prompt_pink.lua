@@ -245,6 +245,13 @@ local function build_layout_config()
     padding_x = 48,
     padding_y = 4,
 
+    -- menu text intro animation
+    text_intro_enabled = true,
+    text_intro_frames = 28,
+    text_intro_stagger_frames = 12,
+    text_intro_slide_px = 12,
+
+
     scrollbar_x = 452,
     scrollbar_y = 12,
     scrollbar_h = 126,
