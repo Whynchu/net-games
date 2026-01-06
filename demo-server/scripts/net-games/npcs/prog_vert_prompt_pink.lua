@@ -5,9 +5,8 @@
 --   Interact ->
 --     YES/NO prompt: "Do you wanna check out the vertical menu?"
 --       YES ->
---         SAME textbox becomes:
---           "Awesome. Let me know if there's anything that you like."
---         Vertical menu opens while that line prints,
+--         SAME textbox becomes the intro line you pass into open_vertical_menu(...),
+--         vertical menu opens while that line prints,
 --         and menu control unlocks after printing finishes.
 --
 -- Menu selection flow (Goal_1_5):
@@ -31,6 +30,30 @@ local PromptVertical = require("scripts/net-games/dialogue/prompt_vertical")
 local TalkPresets    = require("scripts/net-games/npcs/talk_presets")
 local Displayer      = require("scripts/net-games/displayer/displayer")
 local Input          = require("scripts/net-games/input/input")
+
+--=====================================================
+-- SFX
+--=====================================================
+local SFX = {
+  DESC        = "/server/assets/net-games/sfx/card_desc.ogg",
+  CONFIRM     = "/server/assets/net-games/sfx/card_confirm.ogg",
+  DESC_CLOSE  = "/server/assets/net-games/sfx/card_desc_close.ogg",
+}
+
+local function play_sfx(player_id, path)
+  if not path then return end
+  Net.provide_asset_for_player(player_id, path)
+
+  if Net.play_sound_for_player then
+    pcall(function()
+      Net.play_sound_for_player(player_id, path)
+    end)
+  elseif Net.play_sound then
+    pcall(function()
+      Net.play_sound(path)
+    end)
+  end
+end
 
 -- pending_ack[player_id] = {
 --   box_id = "...",
@@ -256,7 +279,6 @@ local function build_layout_config()
     text_intro_stagger_frames = 12,
     text_intro_slide_px = 6,
 
-
     scrollbar_x = 452,
     scrollbar_y = 12,
     scrollbar_h = 126,
@@ -314,35 +336,35 @@ end
 -- Tick: handle pending ACK flow + deferred EXIT goodbye
 --=====================================================
 Net:on("tick", function()
---=====================================================
--- Goodbye close: keep input locked until textbox is fully removed
---=====================================================
-for player_id, g in pairs(goodbye_closing) do
-  local box_id = g.box_id or "prog_vert_pink_box"
+  --=====================================================
+  -- Goodbye close: keep input locked until textbox is fully removed
+  --=====================================================
+  for player_id, g in pairs(goodbye_closing) do
+    local box_id = g.box_id or "prog_vert_pink_box"
 
-  -- While closing exists, stay locked and swallow inputs
-  if Net.lock_player_input then
-    pcall(function() Net.lock_player_input(player_id) end)
-  end
-  Input.consume(player_id)
-  Input.swallow(player_id, 0.05)
-
-  -- True "done" check: textbox data no longer exists
-  local bd = Displayer.Text.getTextBoxData(player_id, box_id)
-  if not bd then
-    goodbye_closing[player_id] = nil
-
-    if Net.unlock_player_input then
-      pcall(function() Net.unlock_player_input(player_id) end)
+    -- While closing exists, stay locked and swallow inputs
+    if Net.lock_player_input then
+      pcall(function() Net.lock_player_input(player_id) end)
     end
-
-    -- One more swallow so the release doesn't instantly re-trigger interaction
     Input.consume(player_id)
-    Input.clear_require_release(player_id, { "confirm", "cancel" })
-    Input.require_release(player_id, { "confirm", "cancel" })
-    Input.swallow(player_id, 0.12)
+    Input.swallow(player_id, 0.05)
+
+    -- True "done" check: textbox data no longer exists
+    local bd = Displayer.Text.getTextBoxData(player_id, box_id)
+    if not bd then
+      goodbye_closing[player_id] = nil
+
+      if Net.unlock_player_input then
+        pcall(function() Net.unlock_player_input(player_id) end)
+      end
+
+      -- One more swallow so the release doesn't instantly re-trigger interaction
+      Input.consume(player_id)
+      Input.clear_require_release(player_id, { "confirm", "cancel" })
+      Input.require_release(player_id, { "confirm", "cancel" })
+      Input.swallow(player_id, 0.12)
+    end
   end
-end
 
   -- Fire deferred EXIT goodbye only after PromptVertical fully finalized close.
   for player_id, ex in pairs(exit_pending) do
@@ -384,6 +406,7 @@ end
 
         pending_ack[player_id] = nil
       end
+
       -- While printing, allow confirm to fast-forward
       if st == "printing" then
         if Input.pop(player_id, "confirm") then
@@ -423,10 +446,9 @@ end
           p.phase = 2
         end
       end
-    end -- closes: else of `if not st then ... else ...`
-  end   -- closes: for player_id, p in pairs(pending_ack) do
-end)    -- closes: Net:on("tick", function()
-
+    end
+  end
+end)
 
 --=====================================================
 -- Open the vertical menu (Goal_1_5: keep textbox, reuse existing box)
@@ -441,7 +463,7 @@ local function open_vertical_menu(player_id, intro_text)
     ui = build_ui_config(box_id),
     layout = build_layout_config(),
 
-    question = intro_text or "Pick anything you like.",
+    question = assert(intro_text, "open_vertical_menu requires intro_text"),
     options = build_options(),
     default_index = 1,
 
@@ -457,8 +479,10 @@ local function open_vertical_menu(player_id, intro_text)
     on_choose = function(choice, index, menu)
       set_menu_lock_params(menu)
 
-      -- EXIT behavior
+      -- EXIT behavior (Exit should ONLY play close SFX)
       if choice and choice.id == "exit" then
+        play_sfx(player_id, SFX.DESC_CLOSE)
+
         -- Defer goodbye until PromptVertical finalize completes (it disables indicator).
         exit_pending[player_id] = { box_id = box_id }
 
@@ -469,6 +493,10 @@ local function open_vertical_menu(player_id, intro_text)
 
         return
       end
+
+      -- SFX: selecting a normal (non-exit) option
+      play_sfx(player_id, SFX.DESC)
+
 
       -- Lock menu immediately (visual + input)
       set_menu_locked(menu, true)
@@ -508,10 +536,15 @@ local function open_vertical_menu(player_id, intro_text)
         question = MENU_FLOW.confirm.text_format:format(choice_text),
 
         on_yes = function()
+          -- SFX: confirm
+          play_sfx(player_id, SFX.CONFIRM)
           do_post_text_then_return()
         end,
 
         on_no = function()
+          -- SFX: close/deny
+          play_sfx(player_id, SFX.DESC_CLOSE)
+
           -- Prompt might have unlocked input; re-lock because menu is still up
           if Net.lock_player_input then
             pcall(function() Net.lock_player_input(player_id) end)
@@ -559,6 +592,7 @@ Net:on("actor_interaction", function(event)
     question = "Do you wanna check out the vertical menu?",
 
     on_yes = function()
+      play_sfx(player_id, SFX.DESC)
       open_vertical_menu(player_id, "Awesome. Let me know if there's anything that you like.")
     end,
 
