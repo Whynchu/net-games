@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="isometric" renderorder="right-down" width="40" height="40" tilewidth="64" tileheight="32" infinite="0" nextlayerid="14" nextobjectid="101">
+<map version="1.10" tiledversion="1.11.2" orientation="isometric" renderorder="right-down" width="40" height="40" tilewidth="64" tileheight="32" infinite="0" nextlayerid="14" nextobjectid="102">
  <properties>
   <property name="Background Animation" value="/server/assets/demo/clockman.animation"/>
   <property name="Background Texture" value="/server/assets/demo/clockman.png"/>
@@ -129,7 +129,7 @@
   <object id="95" name="prog_default" x="470.75" y="440.25">
    <point/>
   </object>
-  <object id="96" name="ProgVertPromptLime" x="931.638" y="833.949">
+  <object id="96" name="ProgVertPromptLime" x="995.505" y="900.881">
    <point/>
   </object>
   <object id="97" name="ProgVertPrompt2" x="992.255" y="641.888">
@@ -142,6 +142,9 @@
    <point/>
   </object>
   <object id="100" name="ProgVertPromptPink" x="994.35" y="833.999">
+   <point/>
+  </object>
+  <object id="101" name="ProgVertPromptCharcoalGrey" x="932.144" y="901.087">
    <point/>
   </object>
  </objectgroup>

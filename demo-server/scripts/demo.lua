@@ -31,6 +31,7 @@ require("scripts/net-games/npcs/prog_vert_prompt_2")
 require("scripts/net-games/npcs/prog_vert_prompt_sapphire")
 require("scripts/net-games/npcs/prog_vert_prompt_pink")
 require("scripts/net-games/npcs/prog_vert_prompt_lime")
+require("scripts/net-games/npcs/prog_vert_prompt_charcoal_grey")
 -------------------------------------------
 -- DEMO CODE FOR NPC THAT GIVES COSMETIC --
 -------------------------------------------
