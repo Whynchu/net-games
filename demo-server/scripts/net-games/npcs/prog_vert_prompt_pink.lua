@@ -29,19 +29,21 @@ local Dialogue       = require("scripts/net-games/dialogue/dialogue")
 local Prompt         = require("scripts/net-games/dialogue/prompt")
 local PromptVertical = require("scripts/net-games/dialogue/prompt_vertical")
 local TalkPresets    = require("scripts/net-games/npcs/talk_presets")
-local Displayer = require("scripts/net-games/displayer/displayer")
-local Input     = require("scripts/net-games/input/input")
+local Displayer      = require("scripts/net-games/displayer/displayer")
+local Input          = require("scripts/net-games/input/input")
 
 -- pending_ack[player_id] = {
 --   box_id = "...",
---   menu = <PromptMenuInstance>,
+--   menu = <PromptMenuInstance> | nil,
 --   phase = 1 or 2,
 --   choice_text = "...",
 -- }
 local pending_ack = {}
-local pending_exit = {}
 
-
+-- exit_pending[player_id] = { box_id = "..." }
+-- Used to defer EXIT goodbye until PromptVertical fully finalizes close
+-- (PromptVertical finalize disables indicator when keep_textbox=true).
+local exit_pending = {}
 
 --=====================================================
 -- Area / placement (must match your TMX object name)
@@ -91,9 +93,9 @@ local FRAME = copy_frame_preset(PINK_FRAME)
 local function build_options()
   local t = {}
   for i = 1, 40 do
-    t[#t+1] = { id = i, text = ("Pink Option %02d"):format(i) }
+    t[#t + 1] = { id = i, text = ("Pink Option %02d"):format(i) }
   end
-  t[#t+1] = { id = "exit", text = "Exit" }
+  t[#t + 1] = { id = "exit", text = "Exit" }
   return t
 end
 
@@ -175,7 +177,7 @@ local function build_ui_config(box_id)
   }
 end
 
-local function reset_box_text(player_id, box_id, ui, text)
+local function reset_box_text(player_id, box_id, ui, text, indicator_enabled)
   local ops = {
     page_advance = "wait_for_confirm",
     auto_advance_seconds = 999999,
@@ -190,6 +192,9 @@ local function reset_box_text(player_id, box_id, ui, text)
   }
 
   local bd = ui.backdrop
+  if bd and bd.indicator and indicator_enabled ~= nil then
+    bd.indicator.enabled = indicator_enabled and true or false
+  end
 
   if Displayer.Text.reset_text_box then
     Displayer.Text.reset_text_box(
@@ -213,13 +218,13 @@ local function reset_box_text(player_id, box_id, ui, text)
   end
 end
 
+-- (kept for debugging / legacy callsites; not relied on for indicator correctness)
 local function set_textbox_indicator(player_id, box_id, enabled)
   local bd = Displayer.Text.getTextBoxData(player_id, box_id)
   if not bd or not bd.backdrop then return end
   bd.backdrop.indicator = bd.backdrop.indicator or {}
   bd.backdrop.indicator.enabled = enabled and true or false
 end
-
 
 --=====================================================
 -- Vertical menu layout (frame overlay dye uses layout.frame)
@@ -253,118 +258,6 @@ local function build_layout_config()
   }
 end
 
-Net:on("tick", function()
-  --=====================================================
-  -- Selection/post-text flow (pending_ack)
-  --=====================================================
-  for player_id, p in pairs(pending_ack) do
-    local st = Displayer.Text.getTextBoxState(player_id, p.box_id)
-
-    if not st then
-      pending_ack[player_id] = nil
-    else
-      -- IMPORTANT: keep the player locked while the menu exists
-      if Net.lock_player_input then pcall(function() Net.lock_player_input(player_id) end) end
-
-      -- Phase 2: "Cool..." should NOT wait for confirm.
-      -- As soon as it finishes printing and enters "waiting", return control to the menu.
-      if p.phase == 2 and st == "waiting" then
-        set_textbox_indicator(player_id, p.box_id, false)
-
-        if p.menu and type(p.menu.set_locked) == "function" then
-          p.menu:set_locked(false)
-        end
-
-        pending_ack[player_id] = nil
-      else
-        -- While printing, allow confirm to fast-forward
-        if st == "printing" and Input.pop(player_id, "confirm") then
-          Displayer.Text.advance_text_box(player_id, p.box_id)
-          Input.consume(player_id)
-          Input.require_release(player_id, { "confirm" })
-
-        -- When waiting on the indicator, confirm advances the ack phase
-        elseif st == "waiting" and Input.pop(player_id, "confirm") then
-          Input.consume(player_id)
-          Input.clear_require_release(player_id, { "confirm", "cancel" })
-          Input.swallow(player_id, 0.10)
-
-          local box_id = p.box_id
-
-          if p.phase == 1 then
-            -- Phase 1 confirm -> show "Cool..." (NO indicator) and then auto-return when done printing
-            local ui = build_ui_config(box_id)
-            reset_box_text(player_id, box_id, ui, "Cool. Is there anything else you'd like?")
-
-            -- We do NOT want an indicator for "Cool..."
-            set_textbox_indicator(player_id, box_id, false)
-
-            p.phase = 2
-          end
-          -- Phase 2 confirm is intentionally ignored; auto-return happens above on st=="waiting"
-        end
-      end
-    end
-  end
-  --=====================================================
-  -- EXIT goodbye flow (pending_exit)
-  --=====================================================
-  for player_id, p in pairs(pending_exit) do
-    local box_id = p.box_id
-
-    -- Truth: if TextBoxData is gone, the box is fully removed (closing animation finished)
-    local bd = Displayer.Text.getTextBoxData(player_id, box_id)
-    local st = Displayer.Text.getTextBoxState(player_id, box_id)
-
-    -- If we've already started closing, swallow inputs until it's ACTUALLY gone,
-    -- then unlock and clean up.
-    if p.closing then
-      Input.consume(player_id)
-      Input.swallow(player_id, 0.05)
-
-      if not bd then
-        pending_exit[player_id] = nil
-        if Net.unlock_player_input then pcall(function() Net.unlock_player_input(player_id) end) end
-      end
-
-      goto continue_pending_exit
-    end
-
-    -- If the box vanished unexpectedly, clean up and unlock.
-    if not bd or not st then
-      pending_exit[player_id] = nil
-      if Net.unlock_player_input then pcall(function() Net.unlock_player_input(player_id) end) end
-      goto continue_pending_exit
-    end
-
-    -- Keep player locked while goodbye textbox exists
-    if Net.lock_player_input then pcall(function() Net.lock_player_input(player_id) end) end
-
-    -- PromptVertical._finalize_close(keep_textbox=true) disables indicator;
-    -- force it on for the goodbye line.
-    set_textbox_indicator(player_id, box_id, true)
-
-    -- Allow confirm to fast-forward printing
-    if st == "printing" and Input.pop(player_id, "confirm") then
-      Displayer.Text.advance_text_box(player_id, box_id)
-      Input.consume(player_id)
-      Input.require_release(player_id, { "confirm" })
-
-    -- Confirm on waiting should begin closing, BUT DO NOT unlock yet.
-    elseif st == "waiting" and Input.pop(player_id, "confirm") then
-      Input.consume(player_id)
-      Input.clear_require_release(player_id, { "confirm", "cancel" })
-      Input.swallow(player_id, 0.10)
-
-      Displayer.Text.closeTextBox(player_id, box_id)
-      p.closing = true
-    end
-
-    ::continue_pending_exit::
-  end
-end)
-
-
 --=====================================================
 -- Menu-flow config (NPC-specific; matches Goal_1_5 intent)
 --=====================================================
@@ -377,23 +270,20 @@ local MENU_FLOW = {
   confirm = {
     enabled = true,
     text_format = 'Are you sure you want "%s"?',
-    -- per-choice overrides:
     skip_ids = { exit = true },
   },
 
   post_select = {
     enabled = true,
     text_format = 'You got "%s".',
-    -- per-choice overrides:
     skip_ids = { exit = true },
   },
 
-  -- When true, EXIT closes the menu (others return to menu)
   close_on_exit = true,
 }
 
 --=====================================================
--- Helpers: safe lock/unlock (does nothing if engine not updated yet)
+-- Helpers: safe lock/unlock
 --=====================================================
 local function set_menu_locked(menu, locked)
   if not menu then return end
@@ -404,11 +294,94 @@ end
 
 local function set_menu_lock_params(menu)
   if not menu then return end
-  -- Optional sugar if your engine exposes these fields directly:
-  -- (If you prefer enforcing through PromptVertical.menu opts only, you can delete this.)
   menu.lock_dim_alpha = MENU_FLOW.lock_dim_alpha
   menu.hide_cursor_when_locked = MENU_FLOW.hide_cursor_when_locked
 end
+
+--=====================================================
+-- Tick: handle pending ACK flow + deferred EXIT goodbye
+--=====================================================
+Net:on("tick", function()
+  -- Fire deferred EXIT goodbye only after PromptVertical fully finalized close.
+  for player_id, ex in pairs(exit_pending) do
+    if not (PromptVertical.instances and PromptVertical.instances[player_id]) then
+      local box_id = ex.box_id or "prog_vert_pink_box"
+      local ui = build_ui_config(box_id)
+
+      reset_box_text(player_id, box_id, ui, "Thanks for stopping by!", true)
+
+      pending_ack[player_id] = { box_id = box_id, menu = nil, phase = 1, choice_text = "exit" }
+      exit_pending[player_id] = nil
+
+      -- prevent carry-press from immediately confirming the goodbye
+      Input.consume(player_id)
+      Input.clear_require_release(player_id, { "confirm", "cancel" })
+      Input.swallow(player_id, 0.10)
+    end
+  end
+
+  for player_id, p in pairs(pending_ack) do
+    local st = Displayer.Text.getTextBoxState(player_id, p.box_id)
+
+    if not st then
+      pending_ack[player_id] = nil
+    else
+      -- Keep player locked while pending ack is active
+      if Net.lock_player_input then
+        pcall(function() Net.lock_player_input(player_id) end)
+      end
+
+      -- Phase 2 ("Cool...") auto-return to menu when it finishes printing.
+      if p.phase == 2 and st == "waiting" then
+        -- indicator should be off for this line
+        set_textbox_indicator(player_id, p.box_id, false)
+
+        if p.menu and type(p.menu.set_locked) == "function" then
+          p.menu:set_locked(false)
+        end
+
+        pending_ack[player_id] = nil
+      end
+
+      -- While printing, allow confirm to fast-forward
+      if st == "printing" and Input.pop(player_id, "confirm") then
+        Displayer.Text.advance_text_box(player_id, p.box_id)
+        Input.consume(player_id)
+        Input.require_release(player_id, { "confirm" })
+
+      -- When waiting (indicator), confirm advances the ack phase
+      elseif st == "waiting" and Input.pop(player_id, "confirm") then
+        Input.consume(player_id)
+        Input.clear_require_release(player_id, { "confirm", "cancel" })
+        Input.swallow(player_id, 0.10)
+
+        local box_id = p.box_id
+
+        if p.phase == 1 then
+          -- EXIT: confirm closes textbox + returns control
+          if p.choice_text == "exit" then
+            Displayer.Text.closeTextBox(player_id, box_id)
+            pending_ack[player_id] = nil
+
+            if Net.unlock_player_input then
+              pcall(function() Net.unlock_player_input(player_id) end)
+            end
+
+            -- avoid carry-press into movement after closing
+            Input.consume(player_id)
+            Input.require_release(player_id, { "confirm", "cancel" })
+            return
+          end
+
+          -- Phase 1 confirm -> show "Cool..." (NO indicator) then auto-return
+          local ui = build_ui_config(box_id)
+          reset_box_text(player_id, box_id, ui, "Cool. Is there anything else you'd like?", false)
+          p.phase = 2
+        end
+      end
+    end
+  end
+end)
 
 --=====================================================
 -- Open the vertical menu (Goal_1_5: keep textbox, reuse existing box)
@@ -430,46 +403,33 @@ local function open_vertical_menu(player_id, intro_text)
     cancel_behavior = "jump_to_exit",
     exit_index = 41,
 
-    -- Goal_1_5: do NOT close-on-select; let NPC logic run while menu stays visible
     keep_menu_open = MENU_FLOW.keep_menu_open,
     selection_behavior = "callback_only",
 
     lock_dim_alpha = MENU_FLOW.lock_dim_alpha,
     hide_cursor_when_locked = MENU_FLOW.hide_cursor_when_locked,
 
-    -- New selection pathway (engine-side change requested in Goal_1_5)
     on_choose = function(choice, index, menu)
       set_menu_lock_params(menu)
 
-        -- EXIT behavior
-        if choice and choice.id == "exit" then
-          if MENU_FLOW.close_on_exit then
-            -- Freeze menu input immediately (no more cursor movement during close anim)
-            set_menu_locked(menu, true)
+      -- EXIT behavior
+      if choice and choice.id == "exit" then
+        -- Defer goodbye until PromptVertical finalize completes (it disables indicator).
+        exit_pending[player_id] = { box_id = box_id }
 
-            -- Close the vertical menu, but KEEP the textbox alive.
-            -- prompt_vertical.lua will swallow input a bit during close and (importantly) not show the indicator.
-            PromptVertical.close(player_id, "exit", { keep_textbox = true })
-
-            -- Immediately repurpose the textbox into a clean exit line with an indicator.
-            local ui = build_ui_config(box_id)
-            reset_box_text(player_id, box_id, ui, "Thanks for stopping by.")
-            set_textbox_indicator(player_id, box_id, true)
-
-            -- Drive the “press confirm to close textbox and restore control” flow in tick.
-            pending_exit[player_id] = { box_id = box_id, closing = false }
-          end
-          return
+        if MENU_FLOW.close_on_exit then
+          -- Close ONLY the menu; keep textbox alive.
+          PromptVertical.close(player_id, "exit", { keep_textbox = true })
         end
 
-
+        return
+      end
 
       -- Lock menu immediately (visual + input)
       set_menu_locked(menu, true)
 
       local choice_text = tostring(choice and choice.text or "???")
 
-      -- Confirm?
       local skip_confirm = false
       if choice and choice.id and MENU_FLOW.confirm.skip_ids[choice.id] then
         skip_confirm = true
@@ -487,13 +447,9 @@ local function open_vertical_menu(player_id, intro_text)
         end
 
         local ui = build_ui_config(box_id)
-        reset_box_text(player_id, box_id, ui, MENU_FLOW.post_select.text_format:format(choice_text))
-
-        -- We WANT an indicator for "You got ..."
-        set_textbox_indicator(player_id, box_id, true)
+        reset_box_text(player_id, box_id, ui, MENU_FLOW.post_select.text_format:format(choice_text), true)
 
         pending_ack[player_id] = { box_id = box_id, menu = menu, phase = 1, choice_text = choice_text }
-
       end
 
       if not MENU_FLOW.confirm.enabled or skip_confirm then
@@ -512,18 +468,15 @@ local function open_vertical_menu(player_id, intro_text)
 
         on_no = function()
           -- Prompt might have unlocked input; re-lock because menu is still up
-          if Net.lock_player_input then pcall(function() Net.lock_player_input(player_id) end) end
+          if Net.lock_player_input then
+            pcall(function() Net.lock_player_input(player_id) end)
+          end
 
           local ui = build_ui_config(box_id)
-          reset_box_text(player_id, box_id, ui, "Is there anything else you'd like?")
-
-          -- Cool should not have an indicator
-          set_textbox_indicator(player_id, box_id, false)
+          reset_box_text(player_id, box_id, ui, "Is there anything else you'd like?", false)
 
           pending_ack[player_id] = { box_id = box_id, menu = menu, phase = 2 }
         end,
-
-
 
         cancel_behavior = "select_no",
       })
@@ -540,6 +493,12 @@ Net:on("actor_interaction", function(event)
 
   local player_id = event.player_id
   if Dialogue.is_active(player_id) then return end
+
+  -- Prevent re-entrant interaction spam from force-replacing prompts/menus
+  if pending_ack[player_id] then return end
+  if exit_pending[player_id] then return end
+  if Prompt.instances and Prompt.instances[player_id] then return end
+  if PromptVertical.instances and PromptVertical.instances[player_id] then return end
 
   -- Face the player
   local player_pos = Net.get_player_position(player_id)
