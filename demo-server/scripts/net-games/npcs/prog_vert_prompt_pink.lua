@@ -450,7 +450,7 @@ local function open_vertical_menu(player_id, intro_text)
           if Net.lock_player_input then pcall(function() Net.lock_player_input(player_id) end) end
 
           local ui = build_ui_config(box_id)
-          reset_box_text(player_id, box_id, ui, "Cool. Is there anything else you'd like?")
+          reset_box_text(player_id, box_id, ui, "Is there anything else you'd like?")
 
           -- Cool should not have an indicator
           set_textbox_indicator(player_id, box_id, false)

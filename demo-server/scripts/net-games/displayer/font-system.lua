@@ -388,6 +388,16 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
     local base_spacing = 1
     local scaled_spacing = base_spacing * scale
 
+    -- Normalize tint values once (fonts should use opacity, not `a`)
+    local tint_r, tint_g, tint_b, tint_opacity, tint_color_mode
+    if type(tint) == "table" then
+        tint_r = tint.r
+        tint_g = tint.g
+        tint_b = tint.b
+        tint_opacity = tint.opacity or tint.a -- accept old callers, but we will APPLY via opacity only
+        tint_color_mode = tint.color_mode
+    end
+
     local function build_and_draw(start_x, start_y)
         local current_x = start_x
         local obj_i = 0
@@ -400,10 +410,16 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
                 scale = scale,
                 z_order = z_order,
                 character_objects = {},
-                text = ""
+                text = "",
+                tint_r = tint_r,
+                tint_g = tint_g,
+                tint_b = tint_b,
+                tint_opacity = tint_opacity,
+                tint_color_mode = tint_color_mode
             }
             player_data.active_displays[display_id] = existing
         end
+
 
         local prefix = anim_prefix_for_font(font_name)
 
@@ -440,17 +456,28 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
                     z = z_order,
                     sx = scale,
                     sy = scale,
-                    anim_state = state
+                    anim_state = state,
+
+                    -- IMPORTANT: always reset sprite opacity so "dim" doesn't stick
+                    opacity = 255
                 }
 
-                -- Optional tint (used for dimming menu items, etc.)
-                if type(tint) == "table" then
-                    if tint.r then spr_opts.r = tint.r end
-                    if tint.g then spr_opts.g = tint.g end
-                    if tint.b then spr_opts.b = tint.b end
-                    if tint.a then spr_opts.a = tint.a end
-                    if tint.color_mode then spr_opts.color_mode = tint.color_mode end
-                end
+
+-- Optional tint (used for dimming menu items, etc.)
+if type(tint) == "table" then
+    if tint.r then spr_opts.r = tint.r end
+    if tint.g then spr_opts.g = tint.g end
+    if tint.b then spr_opts.b = tint.b end
+    if tint.a then spr_opts.a = tint.a end
+    if tint.color_mode then spr_opts.color_mode = tint.color_mode end
+
+    -- IMPORTANT: accept "opacity" from callers (PromptVertical uses tint.opacity)
+    -- Use ~= nil so opacity=0 still works.
+    if tint.opacity ~= nil then
+        spr_opts.opacity = tint.opacity
+    end
+end
+
 
                 Net.player_draw_sprite(player_id, font_name, spr_opts)
 
@@ -476,10 +503,17 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
         existing.z_order = z_order
         existing.text = text
 
+        existing.tint_r = tint_r
+        existing.tint_g = tint_g
+        existing.tint_b = tint_b
+        existing.tint_opacity = tint_opacity
+        existing.tint_color_mode = tint_color_mode
+
+
         return display_id
     end
 
-    -- If same text/style and same position: no-op
+    -- If same text/style and same position (and same tint): no-op
     if existing
         and existing.text == text
         and existing.font == font_name
@@ -487,9 +521,15 @@ function FontSystem:drawTextWithId(player_id, text, x, y, font_name, scale, z_or
         and existing.z_order == z_order
         and existing.x == x
         and existing.y == y
+        and existing.tint_r == tint_r
+        and existing.tint_g == tint_g
+        and existing.tint_b == tint_b
+        and existing.tint_opacity == tint_opacity
+        and existing.tint_color_mode == tint_color_mode
     then
         return display_id
     end
+
 
     -- If same text/style but moved: just redraw positions (still no erase)
     -- If text/style changed: update in place + trim tail

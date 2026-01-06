@@ -823,11 +823,10 @@ end
         local text = tostring(self.options[idx].text or "")
         local tint = nil
         if self.locked and (idx ~= sel) then
-          tint = {
-            r = 255, g = 255, b = 255,
-            a = math.floor(255 * (self.lock_dim_alpha or 0.35)),
-            color_mode = 2
-          }
+            tint = {
+              opacity = math.floor(255 * (self.lock_dim_alpha or 0.35))
+            }
+
         end
 
         FontSystem:drawTextWithId(
