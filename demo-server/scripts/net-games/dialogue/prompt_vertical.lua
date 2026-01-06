@@ -668,8 +668,10 @@ function PromptMenuInstance:set_locked(locked)
   if self.locked then
     self.ready_for_input = false
 
-    -- Hide textbox indicator while locked/menu-driven
-    set_textbox_indicator_enabled(self.player_id, self.box_id, false)
+    -- IMPORTANT:
+    -- Do NOT force-disable the textbox indicator here.
+    -- When locked, other systems (Prompt.yesno / post-select text) may WANT the indicator.
+    -- The caller can toggle it as needed.
 
     -- Cursor goes away when locked (Goal_1_5)
     if self.hide_cursor_when_locked then
@@ -680,7 +682,7 @@ function PromptMenuInstance:set_locked(locked)
   else
     self.ready_for_input = true
 
-    -- Still keep indicator off while menu exists (Goal_1_5)
+    -- While the menu is interactable, the textbox indicator should stay off.
     set_textbox_indicator_enabled(self.player_id, self.box_id, false)
   end
 
@@ -688,6 +690,7 @@ function PromptMenuInstance:set_locked(locked)
   self:update_scroll_for_selection(true)
   self:render_menu_contents(true)
 end
+
 
 
 function PromptMenuInstance:update_cursor_bob(dt)
@@ -1119,16 +1122,18 @@ function PromptMenuInstance:update(_dt)
       Input.pop(player_id, "down")
       Input.pop(player_id, "cancel")
 
-      -- PRE-DISABLE indicator when printing the FINAL page so it never "pops" on wait.
-      do
-        local bd = Displayer.Text.getTextBoxData(player_id, self.box_id)
-        local page_count = (bd and bd.pages) and #bd.pages or nil
-        local cur_page = bd and bd.current_page or nil
-        local is_last_page = (page_count and cur_page) and (cur_page >= page_count) or false
-        if is_last_page then
-          set_textbox_indicator_enabled(self.player_id, self.box_id, false)
+        -- PRE-DISABLE indicator when printing the FINAL page so it never "pops" on wait.
+        -- IMPORTANT: only do this during the initial question text phase.
+        if self.state == STATE.TEXT then
+          local bd = Displayer.Text.getTextBoxData(player_id, self.box_id)
+          local page_count = (bd and bd.pages) and #bd.pages or nil
+          local cur_page = bd and bd.current_page or nil
+          local is_last_page = (page_count and cur_page) and (cur_page >= page_count) or false
+          if is_last_page then
+            set_textbox_indicator_enabled(self.player_id, self.box_id, false)
+          end
         end
-      end
+
 
       if Input.is_down(player_id, "confirm") then
         Input.pop(player_id, "confirm")
