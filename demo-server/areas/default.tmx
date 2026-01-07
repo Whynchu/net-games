@@ -62,29 +62,29 @@
     <property name="Direction" value="Up Right"/>
    </properties>
   </object>
-  <object id="74" name="defaultsimon" type="Simon Says" x="755.706" y="568.741">
+  <object id="74" name="defaultsimon" type="Simon Says" x="769.188" y="619.221">
    <properties>
     <property name="Limit" value="10"/>
     <property name="Time" value="30"/>
    </properties>
    <point/>
   </object>
-  <object id="75" name="ProgBannerDialogue" x="706.5" y="705.5">
+  <object id="75" name="ProgBannerDialogue" x="640.343" y="673.833">
    <point/>
   </object>
-  <object id="76" name="ProgDramaticDialogue" x="706.5" y="805.5">
+  <object id="76" name="ProgDramaticDialogue" x="706.5" y="737.776">
    <point/>
   </object>
-  <object id="77" name="ProgBasicDialogue" x="705" y="609">
+  <object id="77" name="ProgBasicDialogue" x="640.725" y="609.314">
    <point/>
   </object>
-  <object id="78" name="ProgBasicFreeDraw" x="803.333" y="802">
+  <object id="78" name="ProgBasicFreeDraw" x="643.115" y="737.725">
    <point/>
   </object>
-  <object id="80" name="ProgDyedDialogue" x="898" y="803.333">
+  <object id="80" name="ProgDyedDialogue" x="707.369" y="803.333">
    <point/>
   </object>
-  <object id="81" name="ProgPromptDialogue" x="894.726" y="707.48">
+  <object id="81" name="ProgPromptDialogue" x="642.955" y="802.482">
    <point/>
   </object>
   <object id="82" name="ProgBasicNameplateDialogue" x="894.348" y="612.665">
@@ -147,10 +147,10 @@
   <object id="101" name="ProgVertPromptCharcoalGrey" x="932.144" y="901.087">
    <point/>
   </object>
-  <object id="102" name="ProgVertPromptRed" x="866.647" y="899.686">
+  <object id="102" name="ProgVertPromptRed" x="705.489" y="674.565">
    <point/>
   </object>
-  <object id="103" name="ProgVertPromptEmeraldShop" x="769.987" y="642.918">
+  <object id="103" name="ProgVertPromptEmeraldShop" x="705.085" y="608.742">
    <point/>
   </object>
  </objectgroup>

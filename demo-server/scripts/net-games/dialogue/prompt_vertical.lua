@@ -30,6 +30,10 @@ local DEFAULT_ASSET = {
   highlight     = "/server/assets/net-games/ui/highlight_default.png",
   cursor        = "/server/assets/net-games/ui/green_cursor.png",
   scrollbar     = "/server/assets/net-games/ui/scrollbar.png",
+
+  shop_item     = "/server/assets/net-games/ui/card_shop_item.png",
+  shop_exit = "/server/assets/net-games/ui/card_shop_exit.png",
+
 }
 
 local function merge_assets(overrides)
@@ -111,6 +115,9 @@ local function provide_ui_assets(player_id, assets)
   Net.provide_asset_for_player(player_id, assets.highlight)
   Net.provide_asset_for_player(player_id, assets.cursor)
   Net.provide_asset_for_player(player_id, assets.scrollbar)
+  Net.provide_asset_for_player(player_id, assets.shop_item)
+  Net.provide_asset_for_player(player_id, assets.shop_exit)
+
 end
 
 local function alloc_ui_sprites(inst)
@@ -140,6 +147,10 @@ local function alloc_ui_sprites(inst)
   Net.player_alloc_sprite(player_id, S.HILITE, { texture_path = A.highlight })
   Net.player_alloc_sprite(player_id, S.CURSOR, { texture_path = A.cursor })
   Net.player_alloc_sprite(player_id, S.SCROLL, { texture_path = A.scrollbar })
+
+  Net.player_alloc_sprite(player_id, S.SHOP_ITEM, { texture_path = A.shop_item })
+  Net.player_alloc_sprite(player_id, S.SHOP_EXIT, { texture_path = A.shop_exit })
+
 end
 
 
@@ -303,7 +314,14 @@ local function normalize_layout(layout)
     monies_amount_offset_x = layout.monies_amount_offset_x,
     monies_amount_offset_y = layout.monies_amount_offset_y,
 
-  
+    -- Shop-only image label (NEW)
+    shop_item_enabled = (layout.shop_item_enabled == true),
+    shop_item_pad_x   = layout.shop_item_pad_x,
+    shop_item_pad_y   = layout.shop_item_pad_y,
+    shop_item_z_add   = layout.shop_item_z_add,
+
+    shop_item_swap_exit = (layout.shop_item_swap_exit == true),
+
   }
 
   -- Safety: visible rows must be >= 1
@@ -346,6 +364,8 @@ function PromptMenuInstance:new(player_id, opts)
     HILITE     = "pv_" .. base .. "_spr_hilite",
     CURSOR     = "pv_" .. base .. "_spr_cursor",
     SCROLL     = "pv_" .. base .. "_spr_scroll",
+    SHOP_ITEM  = "pv_" .. base .. "_spr_shop_item",
+    SHOP_EXIT  = "pv_" .. base .. "_spr_shop_exit",
   }
 
   o._sprites_allocated = false
@@ -415,6 +435,8 @@ function PromptMenuInstance:new(player_id, opts)
     monies    = base .. "_menu_monies",
     monies_amount = base .. "_menu_monies_amount",
 
+    shop_item = base .. "_menu_shop_item",
+    shop_exit = base .. "_menu_shop_exit",
   }
 
   -- Stable text display IDs (one per visible row) to prevent flicker.
@@ -576,6 +598,12 @@ function PromptMenuInstance:start_close(reason, keep_textbox)
   erase_sprite(self.player_id, self.draw.hilite)
   erase_sprite(self.player_id, self.draw.cursor)
   erase_sprite(self.player_id, self.draw.scroll)
+
+  erase_sprite(self.player_id, self.draw.shop_item)
+  erase_sprite(self.player_id, self.draw.shop_exit)
+
+
+
   FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
   FontSystem:eraseTextDisplay(self.player_id, self.draw.monies_amount)
   self:clear_menu_text()
@@ -878,6 +906,38 @@ do
     else
       FontSystem:eraseTextDisplay(self.player_id, self.draw.monies_amount)
     end
+
+        if L.shop_item_enabled then
+          local scale = tonumber(L.scale) or 2.0
+          local ix = x0 + (MENU_W * scale) - (tonumber(L.shop_item_pad_x) or 0)
+          local iy = y0 + (tonumber(L.shop_item_pad_y) or 0)
+          local zadd = tonumber(L.shop_item_z_add) or 3
+
+          local cur = (self.options and self.selection_index) and self.options[self.selection_index] or nil
+          local cur_id = cur and cur.id or nil
+          local cur_text = cur and cur.text or nil
+
+          local is_exit_hover =
+            (self.selection_index == self.exit_index) or
+            (cur_id ~= nil and tostring(cur_id) == "exit") or
+            (cur_text ~= nil and string.lower(tostring(cur_text)) == "exit")
+
+          if (L.shop_item_swap_exit == true) and is_exit_hover then
+            -- show EXIT, hide ITEM
+            erase_sprite(self.player_id, self.draw.shop_item)
+            draw_sprite(self, self.spr.SHOP_EXIT, self.draw.shop_exit, ix, iy, (L.z + zadd), scale)
+          else
+            -- show ITEM, hide EXIT
+            erase_sprite(self.player_id, self.draw.shop_exit)
+            draw_sprite(self, self.spr.SHOP_ITEM, self.draw.shop_item, ix, iy, (L.z + zadd), scale)
+          end
+        else
+          erase_sprite(self.player_id, self.draw.shop_item)
+          erase_sprite(self.player_id, self.draw.shop_exit)
+        end
+
+
+
 
   else
     FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
@@ -1481,6 +1541,7 @@ function PromptVertical._finalize_close(player_id, _reason, opts)
   erase_sprite(player_id, inst.draw.hilite)
   erase_sprite(player_id, inst.draw.cursor)
   erase_sprite(player_id, inst.draw.scroll)
+  erase_sprite(player_id, inst.draw.shop_item)
 
   -- Erase menu text
   inst:clear_menu_text()

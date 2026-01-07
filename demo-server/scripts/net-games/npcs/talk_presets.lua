@@ -236,9 +236,17 @@ P.vert_menus = {
     monies_amount_offset_y = 5,
     monies_amount_offset_x = 32,
 
-    -- Optional: if omitted, we reuse monies_label_pad_x / monies_label_z_add
-    -- monies_amount_pad_x = 4,
-    -- monies_amount_z_add = 100,
+    -- NEW: Shop-only "Shop Item" image (top-left-ish)
+    shop_item_enabled = true,
+    shop_item_swap_exit = true,
+
+
+    -- px before scale (same convention as monies pads)
+    shop_item_pad_x = 164,
+    shop_item_pad_y = 54,
+
+    -- how far above the menu's base z to draw it
+    shop_item_z_add = 4,
 
   },
 }
