@@ -350,9 +350,37 @@ function Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
     end
   end
 
-  -- Text/content is always author-supplied, but we provide safe fallbacks.
-  -- These can be overridden via menu_cfg.texts.{...}
+  -- Text/content:
+  -- Back-compat + improved author ergonomics.
+  --
+  -- Authors may provide strings in either:
+  --   A) Top-level keys (older call sites):
+  --        menu_cfg.open_question, menu_cfg.intro_text
+  --   B) A single menu_cfg.texts table (preferred):
+  --        texts.open_question
+  --        texts.open_yes (or texts.intro_text)
+  --        texts.open_no  (or texts.decline_open)
+  --        texts.confirm_format, texts.post_select_format, ...
+  --
+  -- This keeps NPC scripts readable and avoids jumping around.
   local texts = menu_cfg.texts or {}
+
+  local function pick_text(...)
+    for i = 1, select("#", ...) do
+      local v = select(i, ...)
+      if type(v) == "string" and v ~= "" then
+        return v
+      end
+    end
+    return nil
+  end
+
+  -- Alias support for author-friendly naming.
+  -- (We keep both to preserve compatibility with existing NPC scripts.)
+  local open_question_text = pick_text(menu_cfg.open_question, texts.open_question)
+  local open_yes_text      = pick_text(menu_cfg.intro_text, texts.open_yes, texts.intro_text)
+  local open_no_text       = pick_text(texts.open_no, texts.decline_open)
+
   flow.confirm = flow.confirm or {}
   flow.post_select = flow.post_select or {}
 
@@ -374,9 +402,10 @@ function Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
     flow.exit_goodbye_text = texts.exit_goodbye
   end
 
+
   local function open_menu()
     TalkVertMenu.open(player_id, bot_name or (cfg.name or ""), cfg, {
-      intro_text = menu_cfg.intro_text or "...",
+      intro_text = open_yes_text or "...",
       options = options,
       default_index = menu_cfg.default_index or 1,
       cancel_behavior = menu_cfg.cancel_behavior or "jump_to_exit",
@@ -388,10 +417,9 @@ function Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
   end
 
   -- Optional open prompt. If menu_cfg.open_question is nil/false, open immediately.
-  local q = menu_cfg.open_question
-  if q == nil then
-    q = "Do you wanna check out the vertical menu?"
-  end
+  local q = open_question_text
+  if q == nil then q = "Do you wanna check out the vertical menu?" end
+
 
   if q == false then
     open_menu()
@@ -400,8 +428,20 @@ function Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
 
   Talk.prompt_yesno(player_id, q, cfg, bot_name, {
     on_yes = function()
+      -- Pink/Lime parity: opening the menu plays the DESC sfx once
+      local path = flow and flow.sfx and flow.sfx.desc
+      if path then
+        Net.provide_asset_for_player(player_id, path)
+        if Net.play_sound_for_player then
+          pcall(function() Net.play_sound_for_player(player_id, path) end)
+        elseif Net.play_sound then
+          pcall(function() Net.play_sound(path) end)
+        end
+      end
+
       open_menu()
     end,
+
 
     on_no = function()
       if type(menu_cfg.on_decline_open) == "function" then
@@ -411,17 +451,12 @@ function Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
       end
 
       -- Default decline behavior:
-      -- If author provided a decline line, show it safely chained from the prompt.
-      local decline = nil
-      if menu_cfg.texts and menu_cfg.texts.decline_open then
-        decline = menu_cfg.texts.decline_open
-      end
-
-      if decline then
+      -- If author provided a decline line (texts.open_no OR texts.decline_open), show it safely chained from the prompt.
+      if open_no_text then
         local next_cfg = shallow_copy(cfg)
         next_cfg.from_prompt = true
         next_cfg.reuse_existing_box = true
-        Talk.start(player_id, { decline }, next_cfg, bot_name)
+        Talk.start(player_id, { open_no_text }, next_cfg, bot_name)
       end
       -- If no decline text and no handler: do nothing (clean close).
     end,
