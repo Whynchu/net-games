@@ -62,7 +62,7 @@
     <property name="Direction" value="Up Right"/>
    </properties>
   </object>
-  <object id="74" name="defaultsimon" type="Simon Says" x="788" y="628">
+  <object id="74" name="defaultsimon" type="Simon Says" x="755.706" y="568.741">
    <properties>
     <property name="Limit" value="10"/>
     <property name="Time" value="30"/>
@@ -150,7 +150,7 @@
   <object id="102" name="ProgVertPromptRed" x="866.647" y="899.686">
    <point/>
   </object>
-  <object id="103" name="ProgVertPromptEmeraldShop" x="802.909" y="899.706">
+  <object id="103" name="ProgVertPromptEmeraldShop" x="769.987" y="642.918">
    <point/>
   </object>
  </objectgroup>

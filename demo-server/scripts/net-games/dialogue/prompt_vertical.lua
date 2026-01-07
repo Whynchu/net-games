@@ -287,6 +287,16 @@ local function normalize_layout(layout)
     text_intro_frames         = tonumber(layout.text_intro_frames or 20) or 20,
     text_intro_stagger_frames = tonumber(layout.text_intro_stagger_frames or 3) or 3,
     text_intro_slide_px       = tonumber(layout.text_intro_slide_px or 10) or 10, 
+  
+    -- Shop-only top-right label (optional)
+    monies_label_enabled = (layout.monies_label_enabled == true),
+    monies_label_text    = layout.monies_label_text,
+    monies_label_font    = layout.monies_label_font,
+    monies_label_pad_x   = layout.monies_label_pad_x,
+    monies_label_pad_y   = layout.monies_label_pad_y,
+    monies_label_z_add   = layout.monies_label_z_add,
+  
+  
   }
 
   -- Safety: visible rows must be >= 1
@@ -395,6 +405,7 @@ function PromptMenuInstance:new(player_id, opts)
     hilite    = base .. "_menu_hilite",
     cursor    = base .. "_menu_cursor",
     scroll    = base .. "_menu_scroll",
+    monies    = base .. "_menu_monies",
   }
 
   -- Stable text display IDs (one per visible row) to prevent flicker.
@@ -556,6 +567,7 @@ function PromptMenuInstance:start_close(reason, keep_textbox)
   erase_sprite(self.player_id, self.draw.hilite)
   erase_sprite(self.player_id, self.draw.cursor)
   erase_sprite(self.player_id, self.draw.scroll)
+  FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
   self:clear_menu_text()
 
   -- If OPEN is mid-play, stop it so it doesn't fight CLOSE
@@ -792,12 +804,48 @@ if self.menu_bg_open_playing or self.menu_bg_needs_open then
   erase_sprite(self.player_id, self.draw.hilite)
   erase_sprite(self.player_id, self.draw.cursor)
   erase_sprite(self.player_id, self.draw.scroll)
+  FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
   return
 end
 
 
   local L = self.layout
   local x0, y0 = self:menu_origin()
+
+-- ========================
+-- SHOP label: "MONIES" (WIDE font) - top-right of menu window
+-- ========================
+do
+  if L.monies_label_enabled then
+    local scale = tonumber(L.scale) or 2.0
+    local text  = tostring(L.monies_label_text or "MONIES")
+    local font  = tostring(L.monies_label_font or "WIDE_BLACK")
+
+    local pad_x = (tonumber(L.monies_label_pad_x) or 6) * scale
+    local pad_y = (tonumber(L.monies_label_pad_y) or 4) * scale
+    local zadd  = tonumber(L.monies_label_z_add) or 4
+
+    local tw = FontSystem:getTextWidth(text, font, scale)
+
+    -- menu sprite is drawn anchored to bottom-right (x0,y0 is top-left),
+    -- so MENU_W is the correct width reference here.
+    local mx = x0 + (MENU_W * scale) - pad_x - tw
+    local my = y0 + pad_y
+
+    FontSystem:drawTextWithId(
+      self.player_id,
+      text,
+      mx, my,
+      font,
+      scale,
+      (L.z + zadd),
+      self.draw.monies
+    )
+  else
+    FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
+  end
+end
+
 
   -- Only redraw the option TEXT when the visible window changes.
   -- Selection changes only move highlight/cursor, so keep text displays stable to prevent flicker.

@@ -59,7 +59,7 @@ Talk.npc({
 
       sfx = "card_desc",
       flow = "prog_prompt",
-      layout = "prog_prompt",
+      layout = "prog_prompt_shop",
     })
   end,
 })

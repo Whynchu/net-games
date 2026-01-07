@@ -191,6 +191,42 @@ P.vert_menus = {
     cursor_offset_x = 16,
     cursor_offset_y = 4,
   },
+  -- Shop skin version: identical layout, plus MONIES label
+  prog_prompt_shop = {
+    anchor = "textbox",
+    offset_x = 1,
+    offset_y = -199,
+
+    width = 160,
+    height = 64,
+
+    visible_rows = 5,
+    row_height = 14,
+    padding_x = 48,
+    padding_y = 4,
+
+    text_intro_enabled = true,
+    text_intro_frames = 18,
+    text_intro_stagger_frames = 12,
+    text_intro_slide_px = 6,
+
+    scrollbar_x = 452,
+    scrollbar_y = 12,
+    scrollbar_h = 126,
+
+    highlight_inset_x = 12,
+    highlight_inset_y = 3,
+    cursor_offset_x = 16,
+    cursor_offset_y = 4,
+
+    -- NEW: Shop-only top-right label
+    monies_label_enabled = true,
+    monies_label_text = "MONIES",
+    monies_label_font = "WIDE",
+    monies_label_pad_x = 52,  -- px before scale
+    monies_label_pad_y = 2,  -- px before scale
+    monies_label_z_add = 4,
+  },
 }
 
 function P.get_vert_menu_layout(key)
