@@ -296,6 +296,13 @@ local function normalize_layout(layout)
     monies_label_pad_y   = layout.monies_label_pad_y,
     monies_label_z_add   = layout.monies_label_z_add,
   
+    -- Shop-only money amount (NEW)
+    monies_amount_enabled  = (layout.monies_amount_enabled == true),
+    monies_amount_text     = layout.monies_amount_text,
+    monies_amount_font     = layout.monies_amount_font,
+    monies_amount_offset_x = layout.monies_amount_offset_x,
+    monies_amount_offset_y = layout.monies_amount_offset_y,
+
   
   }
 
@@ -406,6 +413,8 @@ function PromptMenuInstance:new(player_id, opts)
     cursor    = base .. "_menu_cursor",
     scroll    = base .. "_menu_scroll",
     monies    = base .. "_menu_monies",
+    monies_amount = base .. "_menu_monies_amount",
+
   }
 
   -- Stable text display IDs (one per visible row) to prevent flicker.
@@ -568,6 +577,7 @@ function PromptMenuInstance:start_close(reason, keep_textbox)
   erase_sprite(self.player_id, self.draw.cursor)
   erase_sprite(self.player_id, self.draw.scroll)
   FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
+  FontSystem:eraseTextDisplay(self.player_id, self.draw.monies_amount)
   self:clear_menu_text()
 
   -- If OPEN is mid-play, stop it so it doesn't fight CLOSE
@@ -805,6 +815,7 @@ if self.menu_bg_open_playing or self.menu_bg_needs_open then
   erase_sprite(self.player_id, self.draw.cursor)
   erase_sprite(self.player_id, self.draw.scroll)
   FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
+  FontSystem:eraseTextDisplay(self.player_id, self.draw.monies_amount)
   return
 end
 
@@ -841,9 +852,38 @@ do
       (L.z + zadd),
       self.draw.monies
     )
+        -- Amount line under MONIES (THIN)
+    if L.monies_amount_enabled then
+      local atext = tostring(L.monies_amount_text or "0$")
+      local afont = tostring(L.monies_amount_font or "THIN")
+
+      local ax_off = (tonumber(L.monies_amount_offset_x) or 0) * scale
+      local ay_off = (tonumber(L.monies_amount_offset_y) or 10) * scale
+
+      local atw = FontSystem:getTextWidth(atext, afont, scale)
+
+      -- Right-align to the same right edge as MONIES, then apply offsets
+      local ax = (mx + tw) - atw + ax_off
+      local ay = my + ay_off
+
+      FontSystem:drawTextWithId(
+        self.player_id,
+        atext,
+        ax, ay,
+        afont,
+        scale,
+        (L.z + zadd),
+        self.draw.monies_amount
+      )
+    else
+      FontSystem:eraseTextDisplay(self.player_id, self.draw.monies_amount)
+    end
+
   else
     FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
+    FontSystem:eraseTextDisplay(self.player_id, self.draw.monies_amount)
   end
+
 end
 
 
@@ -1444,6 +1484,9 @@ function PromptVertical._finalize_close(player_id, _reason, opts)
 
   -- Erase menu text
   inst:clear_menu_text()
+  FontSystem:eraseTextDisplay(player_id, inst.draw.monies)
+  FontSystem:eraseTextDisplay(player_id, inst.draw.monies_amount)
+
 
   if not keep then
     Displayer.Text.closeTextBox(player_id, inst.box_id)

@@ -32,7 +32,7 @@ Talk.npc({
       nameplate = "prog",
     }, {
       -- ultra-short options spec: count + auto Exit
-      options = { count = 99, prefix = "Buy Item ", pad = 2, exit_text = "Exit", exit_id = "exit" },
+      options = { count = 99, prefix = "Item ", pad = 2, exit_text = "Exit", exit_id = "exit" },
 
       -- overrideable content strings live here (NOT in presets)
       texts = {

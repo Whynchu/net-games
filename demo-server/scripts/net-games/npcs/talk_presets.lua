@@ -226,6 +226,20 @@ P.vert_menus = {
     monies_label_pad_x = 52,  -- px before scale
     monies_label_pad_y = 2,  -- px before scale
     monies_label_z_add = 4,
+
+    -- NEW: Shop-only money amount (under MONIES)
+    monies_amount_enabled  = true,
+    monies_amount_text     = "0$",
+    monies_amount_font     = "THIN",
+
+    -- Positioned relative to the MONIES label (px before scale)
+    monies_amount_offset_y = 5,
+    monies_amount_offset_x = 32,
+
+    -- Optional: if omitted, we reuse monies_label_pad_x / monies_label_z_add
+    -- monies_amount_pad_x = 4,
+    -- monies_amount_z_add = 100,
+
   },
 }
 
