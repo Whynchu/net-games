@@ -171,6 +171,24 @@ local function draw_sprite(inst, sprite_id, draw_id, x, y, z, s, anim_state)
   Net.player_draw_sprite(inst.player_id, sprite_id, opts)
 end
 
+local function draw_sprite_xy(inst, sprite_id, draw_id, x, y, z, sx, sy, anim_state)
+  alloc_ui_sprites(inst)
+
+  local opts = {
+    id = draw_id,
+    x = x, y = y, z = z,
+    sx = sx or 2.0,
+    sy = sy or 2.0,
+  }
+
+  if anim_state then
+    opts.anim_state = anim_state
+  end
+
+  Net.player_draw_sprite(inst.player_id, sprite_id, opts)
+end
+
+
 local function draw_menu_frame_overlay(inst, draw_id, x, y, z, s, anim_state, frame_cfg)
   if type(frame_cfg) ~= "table" then
     -- ensure no stale overlay is left behind
@@ -322,6 +340,17 @@ local function normalize_layout(layout)
 
     shop_item_swap_exit = (layout.shop_item_swap_exit == true),
 
+    -- Shop item intro "unfold" animation (NEW)
+    shop_item_intro_enabled = (layout.shop_item_intro_enabled == true),
+    shop_item_intro_frames  = tonumber(layout.shop_item_intro_frames or 10) or 10,
+
+    -- Required for true center-scaling (set these in your preset!)
+    shop_item_w = tonumber(layout.shop_item_w or 0) or 0,
+    shop_item_h = tonumber(layout.shop_item_h or 0) or 0,
+    shop_exit_w = tonumber(layout.shop_exit_w or 0) or 0,
+    shop_exit_h = tonumber(layout.shop_exit_h or 0) or 0,
+
+
   }
 
   -- Safety: visible rows must be >= 1
@@ -460,6 +489,11 @@ function PromptMenuInstance:new(player_id, opts)
   -- Text intro speed boost (temporary, per intro run)
   o._text_intro_speed_mult = 1
   o._text_intro_boosted = false
+
+  -- Shop item intro animation state (NEW)
+  o._shop_item_intro_active = false
+  o._shop_item_intro_t = 0
+
 
 
   -- OPEN anim timing (must outlive a single tick)
@@ -925,11 +959,66 @@ do
           if (L.shop_item_swap_exit == true) and is_exit_hover then
             -- show EXIT, hide ITEM
             erase_sprite(self.player_id, self.draw.shop_item)
-            draw_sprite(self, self.spr.SHOP_EXIT, self.draw.shop_exit, ix, iy, (L.z + zadd), scale)
+            local w = tonumber(L.shop_exit_w) or 0
+            local h = tonumber(L.shop_exit_h) or 0
+
+            local sx = scale
+            local sy = scale
+            local dx = ix
+            local dy = iy
+
+            if self._shop_item_intro_active and w > 0 then
+              local frames = tonumber(L.shop_item_intro_frames) or 10
+              local dur = frames / 60
+              local raw = math.min(1, (self._shop_item_intro_t or 0) / math.max(0.0001, dur))
+
+              -- Ease-in that stays thin longer, then snaps open
+              local t = raw * raw * raw
+
+              -- start thinner than zero-width visually (BN-style snap)
+              local min_p = 0.05   -- 5% width floor
+              local p = math.max(min_p, t)
+
+              sx = scale * p
+
+              local cx = ix + (w * scale) / 2
+              dx = cx - (w * sx) / 2
+            end
+
+            draw_sprite_xy(self, self.spr.SHOP_EXIT, self.draw.shop_exit, dx, dy, (L.z + zadd), sx, sy)
+
           else
             -- show ITEM, hide EXIT
             erase_sprite(self.player_id, self.draw.shop_exit)
-            draw_sprite(self, self.spr.SHOP_ITEM, self.draw.shop_item, ix, iy, (L.z + zadd), scale)
+            local w = tonumber(L.shop_item_w) or 0
+            local h = tonumber(L.shop_item_h) or 0
+
+            local sx = scale
+            local sy = scale
+            local dx = ix
+            local dy = iy
+
+            if self._shop_item_intro_active and w > 0 then
+              local frames = tonumber(L.shop_item_intro_frames) or 10
+              local dur = frames / 60
+              local raw = math.min(1, (self._shop_item_intro_t or 0) / math.max(0.0001, dur))
+
+              -- Ease-in that stays thin longer, then snaps open
+              local t = raw * raw * raw
+
+              -- start thinner than zero-width visually (BN-style snap)
+              local min_p = 0.05   -- 5% width floor
+              local p = math.max(min_p, t)
+
+              sx = scale * p
+
+              -- keep center fixed while sx changes
+              local cx = ix + (w * scale) / 2
+              dx = cx - (w * sx) / 2
+            end
+
+            draw_sprite_xy(self, self.spr.SHOP_ITEM, self.draw.shop_item, dx, dy, (L.z + zadd), sx, sy)
+
           end
         else
           erase_sprite(self.player_id, self.draw.shop_item)
@@ -1243,15 +1332,25 @@ function PromptMenuInstance:do_cancel()
   -- Default: jump_to_exit
   if self.selection_index ~= self.exit_index then
     self.selection_index = self.exit_index
+    self:restart_shop_item_intro()
     local sc_changed = self:update_scroll_for_selection(false)
     play_cursor_move_sfx(self.player_id)
     self:render_menu_contents(true)
     return
   end
 
+
   -- Already on exit: treat cancel as select
   self:select_current()
 end
+
+function PromptMenuInstance:restart_shop_item_intro()
+  if not (self.layout and self.layout.shop_item_intro_enabled) then return end
+  self._shop_item_intro_active = true
+  self._shop_item_intro_t = 0
+end
+
+
 
 function PromptMenuInstance:update(_dt)
   local player_id = self.player_id
@@ -1336,10 +1435,38 @@ function PromptMenuInstance:update(_dt)
         self.menu_contents_pending = false
         self:update_scroll_for_selection(true)
         self:start_text_intro()
+        -- Start shop item "unfold" (NEW)
+            if self.layout.shop_item_intro_enabled then
+              self._shop_item_intro_active = true
+              self._shop_item_intro_t = 0
+            end
         self:render_menu_contents(true)
       end
     end
   end
+
+  -- =====================================================
+  -- Shop item intro "unfold" timing (NEW)
+  -- =====================================================
+    if self._shop_item_intro_active then
+      local dt = _dt or 0
+      self._shop_item_intro_t = (self._shop_item_intro_t or 0) + dt
+
+      local frames = tonumber(self.layout.shop_item_intro_frames) or 10
+      local dur = frames / 60  -- frames-at-60Hz ? seconds
+
+      if self._shop_item_intro_t >= dur then
+        self._shop_item_intro_active = false
+        self._shop_item_intro_t = dur
+      end
+
+      -- redraw every tick while animating
+      self:render_menu_contents(true)
+    end
+
+
+
+
 
   -- =====================================================
   -- Text intro animation timing (fade/slide/cascade)
@@ -1466,13 +1593,13 @@ function PromptMenuInstance:update(_dt)
       else
         self.selection_index = self.selection_index - 1
       end
-
-      if self.selection_index ~= prev then
-        local sc_changed = self:update_scroll_for_selection(false)
-        play_cursor_move_sfx(player_id)
-        -- Only force redraw when the visible page window changed.
-        self:render_menu_contents(sc_changed)
-      end
+          if self.selection_index ~= prev then
+            self:restart_shop_item_intro()
+            local sc_changed = self:update_scroll_for_selection(false)
+            play_cursor_move_sfx(player_id)
+            -- Let the intro timer drive redraw; only force when scrolling window changed
+            self:render_menu_contents(sc_changed)
+          end
       return
 
     end
@@ -1485,12 +1612,12 @@ function PromptMenuInstance:update(_dt)
       else
         self.selection_index = self.selection_index + 1
       end
-
-      if self.selection_index ~= prev then
-        local sc_changed = self:update_scroll_for_selection(false)
-        play_cursor_move_sfx(player_id)
-        self:render_menu_contents(sc_changed)
-      end
+        if self.selection_index ~= prev then
+          self:restart_shop_item_intro()
+          local sc_changed = self:update_scroll_for_selection(false)
+          play_cursor_move_sfx(player_id)
+          self:render_menu_contents(sc_changed)
+        end
       return
 
     end

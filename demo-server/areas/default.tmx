@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="isometric" renderorder="right-down" width="40" height="40" tilewidth="64" tileheight="32" infinite="0" nextlayerid="14" nextobjectid="104">
+<map version="1.10" tiledversion="1.11.2" orientation="isometric" renderorder="right-down" width="40" height="40" tilewidth="64" tileheight="32" infinite="0" nextlayerid="14" nextobjectid="105">
  <properties>
   <property name="Background Animation" value="/server/assets/demo/clockman.animation"/>
   <property name="Background Texture" value="/server/assets/demo/clockman.png"/>
@@ -151,6 +151,9 @@
    <point/>
   </object>
   <object id="103" name="ProgVertPromptEmeraldShop" x="705.085" y="608.742">
+   <point/>
+  </object>
+  <object id="104" name="ProgShop" x="704.767" y="546.879">
    <point/>
   </object>
  </objectgroup>

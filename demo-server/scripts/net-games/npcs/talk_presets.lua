@@ -248,6 +248,17 @@ P.vert_menus = {
     -- how far above the menu's base z to draw it
     shop_item_z_add = 4,
 
+    shop_item_intro_enabled = true,
+    shop_item_intro_frames = 8,
+
+    -- IMPORTANT: set these to the real pixel size of the PNGs
+    shop_item_w = 56,
+    shop_item_h = 48,
+    shop_exit_w = 56,
+    shop_exit_h = 48,
+
+
+
   },
 }
 
