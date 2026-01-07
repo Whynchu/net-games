@@ -402,19 +402,21 @@ function Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
     flow.exit_goodbye_text = texts.exit_goodbye
   end
 
+local function open_menu()
+  TalkVertMenu.open(player_id, bot_name or (cfg.name or ""), cfg, {
+    intro_text = open_yes_text or "...",
+    options = options,
+    default_index = menu_cfg.default_index or 1,
+    cancel_behavior = menu_cfg.cancel_behavior or "jump_to_exit",
+    exit_index = exit_index,
 
-  local function open_menu()
-    TalkVertMenu.open(player_id, bot_name or (cfg.name or ""), cfg, {
-      intro_text = open_yes_text or "...",
-      options = options,
-      default_index = menu_cfg.default_index or 1,
-      cancel_behavior = menu_cfg.cancel_behavior or "jump_to_exit",
-      exit_index = exit_index,
+    layout = layout,
+    flow = flow,
 
-      layout = layout,
-      flow = flow,
-    })
-  end
+    assets = menu_cfg.assets,
+  })
+end
+
 
   -- Optional open prompt. If menu_cfg.open_question is nil/false, open immediately.
   local q = open_question_text

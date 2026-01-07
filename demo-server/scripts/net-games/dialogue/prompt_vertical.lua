@@ -23,25 +23,27 @@ PromptVertical._tick_attached = false
 -- Assets (you said these exist under /server/assets/net-games/ui/)
 -- Adjust paths here if your filenames differ.
 --========================
-local ASSET = {
+local DEFAULT_ASSET = {
   menu_bg       = "/server/assets/net-games/ui/prompt_vert_menu_an.png",
-  menu_bg_anim  = "/server/assets/net-games/ui/prompt_vert_menu_an.animation", 
-  menu_bg_frame = "/server/assets/net-games/ui/prompt_vert_menu_an_frame.png",  
+  menu_bg_anim  = "/server/assets/net-games/ui/prompt_vert_menu_an.animation",
+  menu_bg_frame = "/server/assets/net-games/ui/prompt_vert_menu_an_frame.png",
   highlight     = "/server/assets/net-games/ui/highlight_default.png",
   cursor        = "/server/assets/net-games/ui/green_cursor.png",
   scrollbar     = "/server/assets/net-games/ui/scrollbar.png",
 }
 
---========================
--- Dedicated sprite IDs (do NOT collide with textbox internals)
---========================
-local SPR = {
-  MENU_FRAME= 5399,
-  MENU_BG   = 5400,
-  HILITE    = 5401,
-  CURSOR    = 5402,
-  SCROLL    = 5403,
-}
+local function merge_assets(overrides)
+  if type(overrides) ~= "table" then
+    return DEFAULT_ASSET
+  end
+
+  local out = {}
+  for k, v in pairs(DEFAULT_ASSET) do out[k] = v end
+  for k, v in pairs(overrides) do out[k] = v end
+  return out
+end
+
+
 
 -- =====================================================
 -- Prompt vertical menu final size (matches OPEN_IDLE)
@@ -102,51 +104,47 @@ local function ensure_tick()
   end)
 end
 
---========================
--- Sprite allocation helpers
---========================
-local function provide_ui_assets(player_id)
-  Net.provide_asset_for_player(player_id, ASSET.menu_bg)
-  Net.provide_asset_for_player(player_id, ASSET.menu_bg_frame)
-  Net.provide_asset_for_player(player_id, ASSET.menu_bg_anim)
-  Net.provide_asset_for_player(player_id, ASSET.highlight)
-  Net.provide_asset_for_player(player_id, ASSET.cursor)
-  Net.provide_asset_for_player(player_id, ASSET.scrollbar)
+local function provide_ui_assets(player_id, assets)
+  Net.provide_asset_for_player(player_id, assets.menu_bg)
+  Net.provide_asset_for_player(player_id, assets.menu_bg_frame)
+  Net.provide_asset_for_player(player_id, assets.menu_bg_anim)
+  Net.provide_asset_for_player(player_id, assets.highlight)
+  Net.provide_asset_for_player(player_id, assets.cursor)
+  Net.provide_asset_for_player(player_id, assets.scrollbar)
 end
 
--- Track whether we've allocated UI sprites for a player (so we don't restart animations)
-local SPRITES_ALLOCATED = {}
+local function alloc_ui_sprites(inst)
+  if inst._sprites_allocated then return end
+  inst._sprites_allocated = true
 
-local function alloc_ui_sprites(player_id)
-  if SPRITES_ALLOCATED[player_id] then return end
-  SPRITES_ALLOCATED[player_id] = true
+  local player_id = inst.player_id
+  local A = inst.assets
+  local S = inst.spr
 
-  provide_ui_assets(player_id)
+  provide_ui_assets(player_id, A)
 
   -- MENU_BG is animated; start idle by default (we'll play OPEN once manually)
-  Net.player_alloc_sprite(player_id, SPR.MENU_BG, {
-    texture_path = ASSET.menu_bg,
-    anim_path    = ASSET.menu_bg_anim,
+  Net.player_alloc_sprite(player_id, S.MENU_BG, {
+    texture_path = A.menu_bg,
+    anim_path    = A.menu_bg_anim,
     anim_state   = "OPEN_IDLE",
   })
 
-    -- MENU_FRAME uses the SAME animation file (same frame rects); it just swaps the texture
-    -- to the transparent "frame-gray" overlay.
-    Net.player_alloc_sprite(player_id, SPR.MENU_FRAME, {
-      texture_path = ASSET.menu_bg_frame,
-      anim_path    = ASSET.menu_bg_anim,
-      anim_state   = "OPEN_IDLE",
-    })
+  -- MENU_FRAME uses the SAME animation file; only swaps texture
+  Net.player_alloc_sprite(player_id, S.MENU_FRAME, {
+    texture_path = A.menu_bg_frame,
+    anim_path    = A.menu_bg_anim,
+    anim_state   = "OPEN_IDLE",
+  })
 
-
-  Net.player_alloc_sprite(player_id, SPR.HILITE, { texture_path = ASSET.highlight })
-  Net.player_alloc_sprite(player_id, SPR.CURSOR, { texture_path = ASSET.cursor })
-  Net.player_alloc_sprite(player_id, SPR.SCROLL, { texture_path = ASSET.scrollbar })
+  Net.player_alloc_sprite(player_id, S.HILITE, { texture_path = A.highlight })
+  Net.player_alloc_sprite(player_id, S.CURSOR, { texture_path = A.cursor })
+  Net.player_alloc_sprite(player_id, S.SCROLL, { texture_path = A.scrollbar })
 end
 
 
-local function draw_sprite(player_id, sprite_id, draw_id, x, y, z, s, anim_state)
-  alloc_ui_sprites(player_id)
+local function draw_sprite(inst, sprite_id, draw_id, x, y, z, s, anim_state)
+  alloc_ui_sprites(inst)
 
   local opts = {
     id = draw_id,
@@ -159,13 +157,13 @@ local function draw_sprite(player_id, sprite_id, draw_id, x, y, z, s, anim_state
     opts.anim_state = anim_state
   end
 
-  Net.player_draw_sprite(player_id, sprite_id, opts)
+  Net.player_draw_sprite(inst.player_id, sprite_id, opts)
 end
 
-local function draw_menu_frame_overlay(player_id, draw_id, x, y, z, s, anim_state, frame_cfg)
+local function draw_menu_frame_overlay(inst, draw_id, x, y, z, s, anim_state, frame_cfg)
   if type(frame_cfg) ~= "table" then
     -- ensure no stale overlay is left behind
-    Net.player_erase_sprite(player_id, draw_id)
+    Net.player_erase_sprite(inst.player_id, draw_id)
     return
   end
 
@@ -191,7 +189,7 @@ local function draw_menu_frame_overlay(player_id, draw_id, x, y, z, s, anim_stat
     opts.anim_state = anim_state
   end
 
-  Net.player_draw_sprite(player_id, SPR.MENU_FRAME, opts)
+  Net.player_draw_sprite(inst.player_id, inst.spr.MENU_FRAME, opts)
 end
 
 
@@ -319,6 +317,23 @@ function PromptMenuInstance:new(player_id, opts)
   o.box_id = (opts.ui and opts.ui.box_id) or mk_id(player_id)
   o.ui = normalize_ui(opts.ui or {})
   o.layout = normalize_layout(opts.layout or {})
+
+  -- Per-instance assets (prevents cross-NPC overwrites)
+  o.assets = merge_assets(opts.assets)
+
+  -- Per-instance sprite IDs (string IDs are safe; see font-system usage)
+  local base = o.box_id
+  o.spr = {
+    MENU_BG    = "pv_" .. base .. "_spr_menu_bg",
+    MENU_FRAME = "pv_" .. base .. "_spr_menu_frame",
+    HILITE     = "pv_" .. base .. "_spr_hilite",
+    CURSOR     = "pv_" .. base .. "_spr_cursor",
+    SCROLL     = "pv_" .. base .. "_spr_scroll",
+  }
+
+  o._sprites_allocated = false
+
+
 
   o.question = tostring(opts.question or "Choose:")
   o.options  = opts.options or { { text = "Exit" } }
@@ -553,25 +568,27 @@ function PromptMenuInstance:start_close(reason, keep_textbox)
   y = y + (MENU_H * L.scale)
 
   mdbg(self.player_id, "MENU_BG anim_state => CLOSE")
-  draw_sprite(
-    self.player_id, SPR.MENU_BG,
-    self.draw.menu_bg,
-    x, y,
-    L.z,
-    L.scale,
-    "CLOSE"
-  )
+    draw_sprite(
+      self, self.spr.MENU_BG,
+      self.draw.menu_bg,
+      x, y,
+      L.z,
+      L.scale,
+      "CLOSE"
+    )
 
-  -- frame overlay (dyed) closes in lockstep with the base
-draw_menu_frame_overlay(
-  self.player_id,
-  self.draw.menu_frame,
-  x, y,
-  L.z + 1,
-  L.scale,
-  "CLOSE",
-  L.frame
-)
+
+    -- frame overlay (dyed) closes in lockstep with the base
+    draw_menu_frame_overlay(
+      self,
+      self.draw.menu_frame,
+      x, y,
+      L.z + 1,
+      L.scale,
+      "CLOSE",
+      L.frame
+    )
+
 
 
   self.menu_bg_close_t = 0
@@ -601,18 +618,19 @@ function PromptMenuInstance:render_menu_window()
   end
 
 
-  draw_sprite(
-    self.player_id, SPR.MENU_BG,
-    self.draw.menu_bg,
-    x, y,
-    L.z,
-    L.scale,
-    anim
-  )
+    draw_sprite(
+      self, self.spr.MENU_BG,
+      self.draw.menu_bg,
+      x, y,
+      L.z,
+      L.scale,
+      anim
+    )
+
 
     -- dyed frame overlay (uses same animation file; only texture differs)
     draw_menu_frame_overlay(
-      self.player_id,
+      self,
       self.draw.menu_frame,
       x, y,
       L.z + 1,
@@ -620,6 +638,7 @@ function PromptMenuInstance:render_menu_window()
       anim,
       L.frame
     )
+
 end
 
 function PromptMenuInstance:clear_menu_text()
@@ -746,14 +765,15 @@ function PromptMenuInstance:update_cursor_bob(dt)
     x = (self.cursor_base_x - snap_px) + push_px
   end
 
-  draw_sprite(
-    self.player_id, SPR.CURSOR,
-    self.draw.cursor,
-    x,
-    self.cursor_base_y,
-    (self.layout.z + 3),
-    self.layout.scale
-  )
+    draw_sprite(
+      self, self.spr.CURSOR,
+      self.draw.cursor,
+      x,
+      self.cursor_base_y,
+      (self.layout.z + 3),
+      self.layout.scale
+    )
+
 end
 
 
@@ -892,13 +912,14 @@ end
       local hx = x0 + (L.highlight_inset_x or 0)
       local hy = cy + (sel_row * row_h) + ((L.highlight_inset_y or 0) * scale)
 
-      draw_sprite(
-        self.player_id, SPR.HILITE,
-        self.draw.hilite,
-        hx, hy,
-        (L.z + 1),
-        L.scale
-      )
+        draw_sprite(
+          self, self.spr.HILITE,
+          self.draw.hilite,
+          hx, hy,
+          (L.z + 1),
+          L.scale
+        )
+
 
       -- Cursor base (bob anim uses this)
       local curx = x0 + (L.cursor_offset_x or 0)
@@ -908,13 +929,14 @@ end
       self.cursor_base_y = cury
 
         if not (self.locked and self.hide_cursor_when_locked) then
-          draw_sprite(
-            self.player_id, SPR.CURSOR,
-            self.draw.cursor,
-            curx, cury,
-            (L.z + 3),
-            L.scale
-          )
+            draw_sprite(
+              self, self.spr.CURSOR,
+              self.draw.cursor,
+              curx, cury,
+              (L.z + 3),
+              L.scale
+            )
+
         else
           erase_sprite(self.player_id, self.draw.cursor)
         end
@@ -962,14 +984,15 @@ end
     -- Optional: snap to whole pixels to avoid jitter
     thumb_y = math.floor(thumb_y + 0.5)
 
-    draw_sprite(
-      self.player_id, SPR.SCROLL,
-      self.draw.scroll,
-      track_x,
-      thumb_y,
-      (L.z + 3),
-      L.scale
-    )
+        draw_sprite(
+          self, self.spr.SCROLL,
+          self.draw.scroll,
+          track_x,
+          thumb_y,
+          (L.z + 3),
+          L.scale
+        )
+
   else
     erase_sprite(self.player_id, self.draw.scroll)
   end
@@ -1140,17 +1163,17 @@ function PromptMenuInstance:update(_dt)
       x = x + (MENU_W * L.scale)
       y = y + (MENU_H * L.scale)
 
-      draw_sprite(
-        self.player_id, SPR.MENU_BG,
-        self.draw.menu_bg,
-        x, y,
-        L.z,
-        L.scale,
-        "OPEN_IDLE"
-      )
+        draw_sprite(
+          self, self.spr.MENU_BG,
+          self.draw.menu_bg,
+          x, y,
+          L.z,
+          L.scale,
+          "OPEN_IDLE"
+        )
 
         draw_menu_frame_overlay(
-          self.player_id,
+          self,
           self.draw.menu_frame,
           x, y,
           L.z + 1,
@@ -1158,6 +1181,7 @@ function PromptMenuInstance:update(_dt)
           "OPEN_IDLE",
           L.frame
         )
+
 
       -- Now that the menu window is fully open, draw text + scrollbar/cursor once
       if self.menu_contents_pending then
@@ -1400,7 +1424,6 @@ function PromptVertical._finalize_close(player_id, _reason, opts)
     pcall(cb)
   end
 
-  SPRITES_ALLOCATED[player_id] = nil
   PromptVertical.instances[player_id] = nil
 end
 

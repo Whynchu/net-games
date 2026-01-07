@@ -447,6 +447,9 @@ function TalkVertMenu.open(player_id, bot_name, talk_cfg, menu_cfg)
     ui = ui,
     layout = layout,
 
+    assets = menu_cfg.assets,
+
+
     question = tostring(menu_cfg.intro_text or "Choose:"),
     options = menu_cfg.options or { { id = exit_id, text = "Exit" } },
     default_index = tonumber(menu_cfg.default_index or 1) or 1,
