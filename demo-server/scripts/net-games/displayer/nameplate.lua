@@ -357,12 +357,16 @@ function Nameplate:update(player_id, player_data, box_data, dt)
   local total_w = (self.w_left + self.w_right) * scale + (mids * np.mid_w)
  
   -- keep the middle piece centered while unfolding
-  local left_x = np.center_x - (total_w / 2)
+  local left_x = math.floor((np.center_x - (total_w / 2)) + 0.5)
 
-  -- subtle floaty bob
+  -- subtle bob (PIXEL-SNAPPED so plate + frame + text never desync)
   np.bob_t = (np.bob_t or 0) + (dt or 0) * (np.bob_speed or 1.0)
-  local bob = math.sin(np.bob_t) * (np.bob_amp or 0)
-  local y = (np.base_y or np.y) + bob
+
+  -- snap bob to whole pixels (no subpixel jitter)
+  local bob = math.floor((math.sin(np.bob_t) * (np.bob_amp or 0)) + 0.5)
+
+  -- snap final y too
+  local y = math.floor(((np.base_y or np.y) + bob) + 0.5)
 
   -- DEBUG: detect anchor drift (this is the #1 cause of "moves while typing")
   if np.debug then
@@ -386,64 +390,23 @@ function Nameplate:update(player_id, player_data, box_data, dt)
   end
 
   -- =========================
-  -- BASE LAYER (normal art)
+  -- BASE + OVERLAY (INTERLEAVED)
   -- =========================
 
   local mx = left_x + (self.w_left * scale)
 
-  Net.player_draw_sprite(player_id, self.SID_LEFT, {
-    id = np.idp .. "_L",
-    x = left_x, y = y, z = z,
-    sx = scale, sy = scale,
-
-    -- force-clear tint on base
-    r = 255, g = 255, b = 255, a = 255,
-    color_mode = 0,
-  })
-
-  for i = 0, mids - 1 do
-    Net.player_draw_sprite(player_id, self.SID_MID0 .. i, {
-      id = np.idp .. "_M" .. i,
-      x = mx + (i * np.mid_w),
-      y = y, z = z,
-      sx = scale, sy = scale,
-
-      -- force-clear tint on base
-      r = 255, g = 255, b = 255, a = 255,
-      color_mode = 0,
-    })
-  end
-
-
-  for i = mids, self.MAX_MIDS - 1 do
-    Net.player_erase_sprite(player_id, np.idp .. "_M" .. i)
-  end
-
-  Net.player_draw_sprite(player_id, self.SID_RIGHT, {
-    id = np.idp .. "_R",
-    x = mx + (mids * np.mid_w),
-    y = y, z = z,
-    sx = scale, sy = scale,
-
-    -- force-clear tint on base
-    r = 255, g = 255, b = 255, a = 255,
-    color_mode = 0,
-  })
-
-  -- =========================
-  -- OVERLAY LAYER (frame-gray tinted)
-  -- =========================
-
+  -- overlay tint config (we'll draw it immediately after each base piece)
   local f = np.frame
   local draw_frame = (type(f) == "table") and ((tonumber(f.a) or 255) > 0)
 
+  local fz, fr, fg, fb, fa, fmode
   if draw_frame then
-    local fz = z + 1
-    local r = tonumber(f.r) or 255
-    local g = tonumber(f.g) or 255
-    local b = tonumber(f.b) or 255
-    local a = tonumber(f.a) or 255
-    local color_mode = tonumber(f.color_mode) or 2
+    fz = z + 1
+    fr = tonumber(f.r) or 255
+    fg = tonumber(f.g) or 255
+    fb = tonumber(f.b) or 255
+    fa = tonumber(f.a) or 255
+    fmode = tonumber(f.color_mode) or 2
 
     if np.debug then
       _np_dbg(player_id, box_data.id or "?", "FRAME_IDS",
@@ -453,57 +416,94 @@ function Nameplate:update(player_id, player_data, box_data, dt)
         " RF=" .. tostring(np.idp .. "_FR")
       )
       _np_dbg(player_id, box_data.id or "?", "FRAME_TINT",
-        "r=" .. tostring(r) .. " g=" .. tostring(g) .. " b=" .. tostring(b) ..
-        " a=" .. tostring(a) .. " mode=" .. tostring(color_mode)
+        "r=" .. tostring(fr) .. " g=" .. tostring(fg) .. " b=" .. tostring(fb) ..
+        " a=" .. tostring(fa) .. " mode=" .. tostring(fmode)
       )
     end
+  end
 
+  -- LEFT (base, then frame)
+  Net.player_draw_sprite(player_id, self.SID_LEFT, {
+    id = np.idp .. "_L",
+    x = left_x, y = y, z = z,
+    sx = scale, sy = scale,
+    r = 255, g = 255, b = 255, a = 255,
+    color_mode = 0,
+  })
+
+  if draw_frame then
     Net.player_draw_sprite(player_id, self.SID_LEFT_F, {
       id = np.idp .. "_FL",
       x = left_x, y = y, z = fz,
       sx = scale, sy = scale,
-      r = r, g = g, b = b, a = a,
-      color_mode = color_mode,
-    })
-
-    for i = 0, mids - 1 do
-      Net.player_draw_sprite(player_id, self.SID_MID0_F .. i, {
-        id = np.idp .. "_FM" .. i,
-        x = mx + (i * np.mid_w),
-        y = y, z = fz,
-        sx = scale, sy = scale,
-        r = r, g = g, b = b, a = a,
-        color_mode = color_mode,
-      })
-    end
-
-
-    for i = mids, self.MAX_MIDS - 1 do
-      Net.player_erase_sprite(player_id, np.idp .. "_FM" .. i)
-    end
-
-    Net.player_draw_sprite(player_id, self.SID_RIGHT_F, {
-      id = np.idp .. "_FR",
-      x = mx + (mids * np.mid_w),
-      y = y, z = fz,
-      sx = scale, sy = scale,
-      r = r, g = g, b = b, a = a,
-      color_mode = color_mode,
+      r = fr, g = fg, b = fb, a = fa,
+      color_mode = fmode,
     })
   else
     Net.player_erase_sprite(player_id, np.idp .. "_FL")
-    Net.player_erase_sprite(player_id, np.idp .. "_FR")
-    for i = 0, self.MAX_MIDS - 1 do
+  end
+
+  -- MIDS (base+frame per-slice)
+  for i = 0, mids - 1 do
+    local px = mx + (i * np.mid_w)
+
+    Net.player_draw_sprite(player_id, self.SID_MID0 .. i, {
+      id = np.idp .. "_M" .. i,
+      x = px, y = y, z = z,
+      sx = scale, sy = scale,
+      r = 255, g = 255, b = 255, a = 255,
+      color_mode = 0,
+    })
+
+    if draw_frame then
+      Net.player_draw_sprite(player_id, self.SID_MID0_F .. i, {
+        id = np.idp .. "_FM" .. i,
+        x = px, y = y, z = fz,
+        sx = scale, sy = scale,
+        r = fr, g = fg, b = fb, a = fa,
+        color_mode = fmode,
+      })
+    else
       Net.player_erase_sprite(player_id, np.idp .. "_FM" .. i)
     end
   end
+
+  -- erase unused mids (base + frame) together
+  for i = mids, self.MAX_MIDS - 1 do
+    Net.player_erase_sprite(player_id, np.idp .. "_M" .. i)
+    Net.player_erase_sprite(player_id, np.idp .. "_FM" .. i)
+  end
+
+  -- RIGHT (base, then frame)
+  local rx = mx + (mids * np.mid_w)
+
+  Net.player_draw_sprite(player_id, self.SID_RIGHT, {
+    id = np.idp .. "_R",
+    x = rx, y = y, z = z,
+    sx = scale, sy = scale,
+    r = 255, g = 255, b = 255, a = 255,
+    color_mode = 0,
+  })
+
+  if draw_frame then
+    Net.player_draw_sprite(player_id, self.SID_RIGHT_F, {
+      id = np.idp .. "_FR",
+      x = rx, y = y, z = fz,
+      sx = scale, sy = scale,
+      r = fr, g = fg, b = fb, a = fa,
+      color_mode = fmode,
+    })
+  else
+    Net.player_erase_sprite(player_id, np.idp .. "_FR")
+  end
+ 
 
   -- =========================
   -- TEXT
   -- =========================
   if np.complete and not np.closing then
-    local text_x = left_x + (self.w_left * scale) + np.pad_px
-    local text_y = y + (3 * scale) + 2
+    local text_x = math.floor((left_x + (self.w_left * scale) + np.pad_px) + 0.5)
+    local text_y = math.floor((y + (3 * scale) + 2) + 0.5)
 
     self.font_system:drawTextWithId(
       player_id,
