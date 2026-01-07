@@ -327,6 +327,10 @@ end
 local function normalize_text(text)
     if not text or text == "" then return text end
 
+    text = text:gsub("\r", "")
+    text = text:gsub("\239\187\191", "") -- UTF-8 BOM
+    text = text:gsub("\194\160", " ")    -- NBSP
+
     -- UTF-8 smart punctuation
     text = text:gsub("’", "'"):gsub("‘", "'")
     text = text:gsub("“", '"'):gsub("”", '"')

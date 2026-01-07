@@ -360,6 +360,19 @@ function PromptInstance:render_initial()
   Displayer.Text.removeTextBox(player_id, tmp_box_id)
 
   -- PASS 2: create the real prompt box ONCE (this is the one the player sees)
+  
+    -- SAFETY: if the real prompt box_id already exists for ANY reason,
+  -- do NOT "create" over it (createTextBox can collision-ignore and leave stale state).
+  -- If caller wants reuse: reset. Otherwise: remove then create clean.
+  local existing_real = Displayer.Text.getTextBoxData(player_id, self.box_id)
+  if existing_real then
+    if self.reuse_existing_box then
+      -- we'll reset a few lines below using the normal reset path
+    else
+      Displayer.Text.removeTextBox(player_id, self.box_id)
+    end
+  end
+
   -- If you want open animation here, it should come from ui.backdrop.open_seconds
   local ops = {
     page_advance = "wait_for_confirm",
@@ -377,42 +390,29 @@ function PromptInstance:render_initial()
     ops.nameplate = nil
   end
 
-
-    -- If we're reusing an existing textbox (menu/dialogue already owns this box_id),
-  -- do NOT try to create a new one; reset it in-place.
-  local existing = Displayer.Text.getTextBoxData(player_id, self.box_id)
-
-  if self.reuse_existing_box and existing then
-    local x = existing.x or ui.x
-    local y = existing.y or ui.y
-    local w = existing.width  or existing.w or ui.w
-    local h = existing.height or existing.h or ui.h
-    local font  = existing.font  or ui.font
-    local scale = existing.scale or ui.scale
-    local z     = existing.z     or ui.z
-    local backdrop = existing.backdrop or ui.backdrop
-
+  if self.reuse_existing_box then
+    -- ALWAYS reset-in-place when reusing
     if Displayer.Text.reset_text_box then
       Displayer.Text.reset_text_box(
         player_id, self.box_id, text,
-        x, y, w, h,
-        font, scale, z,
-        backdrop,
+        ui.x, ui.y, ui.w, ui.h,
+        ui.font, ui.scale, ui.z,
+        ui.backdrop,
         ui.typing_speed,
         ops
       )
     else
       Displayer.Text.resetTextBox(
         player_id, self.box_id, text,
-        x, y, w, h,
-        font, scale, z,
-        backdrop,
+        ui.x, ui.y, ui.w, ui.h,
+        ui.font, ui.scale, ui.z,
+        ui.backdrop,
         ui.typing_speed,
         ops
       )
     end
   else
-    -- Normal path: create a brand new prompt box
+    -- ALWAYS create clean (we removed any existing box above)
     if Displayer.Text.create_text_box then
       Displayer.Text.create_text_box(
         player_id, self.box_id, text,
@@ -433,9 +433,8 @@ function PromptInstance:render_initial()
       )
     end
   end
-
-
 end
+ 
 
 
 function PromptInstance:render_cursor()

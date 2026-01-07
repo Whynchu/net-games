@@ -58,6 +58,10 @@ local pending_ack = {}
 -- (it may disable indicator during finalization when keep_textbox=true).
 local exit_pending = {}
 
+-- confirm_pending[player_id] = { box_id=..., ui=..., menu=..., flow=..., choice_id=..., choice_text=... }
+-- Defer opening YES/NO confirm by 1 tick to avoid textbox clear/position race.
+local confirm_pending = {}
+
 -- goodbye_closing[player_id] = { box_id=... }
 -- Keep input locked until textbox is fully removed (post-close animation).
 local goodbye_closing = {}
@@ -218,10 +222,87 @@ local function ensure_tick()
         Input.clear_require_release(player_id, { "confirm", "cancel" })
         Input.swallow(player_id, 0.10)
       end
+    end    --=====================================================
+    -- Deferred CONFIRM yes/no (open on next tick)
+    --=====================================================
+    for player_id, c in pairs(confirm_pending) do
+      -- Only fire while the menu instance still exists (player didn't exit)
+      if PromptVertical.instances and PromptVertical.instances[player_id] then
+        confirm_pending[player_id] = nil
+
+        local box_id = c.box_id
+        local ui = c.ui
+        local menu = c.menu
+        local flow = c.flow
+        local choice_id = c.choice_id
+        local choice_text = c.choice_text
+
+        -- Keep the menu locked while confirm is up
+        set_menu_locked(menu, true)
+
+        local qfmt = flow.confirm.text_format or 'Are you sure you want "%s"?'
+        Prompt.yesno(player_id, {
+          ui = ui,
+          reuse_existing_box = true,
+          question = string.format(qfmt, choice_text),
+
+          on_yes = function()
+            play_sfx(player_id, flow.sfx.confirm)
+            -- This runs the same path as "no-confirm" selections
+            local fmt = flow.post_select.text_format or 'You got "%s".'
+            reset_box_text(player_id, box_id, ui, string.format(fmt, choice_text), true)
+
+            pending_ack[player_id] = {
+              box_id = box_id,
+              ui = ui,
+              menu = menu,
+              phase = 1,
+              choice_id = choice_id,
+              choice_text = choice_text,
+              flow = flow,
+            }
+          end,
+
+          on_no = function()
+            play_sfx(player_id, flow.sfx.close)
+
+            -- Prompt may have unlocked input; relock because menu is still visible+locked
+            if Net.lock_player_input then
+              pcall(function() Net.lock_player_input(player_id) end)
+            end
+
+            reset_box_text(
+              player_id,
+              box_id,
+              ui,
+              (flow.after_no_text or flow.after_text or "Is there anything else you'd like?"),
+              false
+            )
+
+            pending_ack[player_id] = {
+              box_id = box_id,
+              ui = ui,
+              menu = menu,
+              phase = 2,
+              choice_id = choice_id,
+              choice_text = choice_text,
+              flow = flow,
+            }
+          end,
+
+          cancel_behavior = "select_no",
+        })
+
+        return
+      else
+        -- Menu was closed before we got here
+        confirm_pending[player_id] = nil
+      end
     end
 
+
     --=====================================================
-    -- Pending ACK phases (post-select / after-text / exit close)
+    -- Pending ACK phases (post-select / after-text / exit close) (post-select / after-text / exit close)
     --=====================================================
     for player_id, p in pairs(pending_ack) do
       local st = Displayer.Text.getTextBoxState(player_id, p.box_id)
@@ -446,46 +527,18 @@ function TalkVertMenu.open(player_id, bot_name, talk_cfg, menu_cfg)
       end
 
       local qfmt = flow.confirm.text_format or 'Are you sure you want "%s"?'
-      Prompt.yesno(player_id, {
+
+      -- Defer opening YES/NO confirm by 1 tick to avoid textbox clear/position race.
+      confirm_pending[player_id] = {
+        box_id = box_id,
         ui = ui,
-        reuse_existing_box = true,
-        question = string.format(qfmt, choice_text),
-
-        on_yes = function()
-          play_sfx(player_id, flow.sfx.confirm)
-          do_post_text_then_ack()
-        end,
-
-        on_no = function()
-          play_sfx(player_id, flow.sfx.close)
-
-          -- Prompt may have unlocked input; relock because menu is still visible+locked
-          if Net.lock_player_input then
-            pcall(function() Net.lock_player_input(player_id) end)
-          end
-
-          reset_box_text(
-            player_id,
-            box_id,
-            ui,
-            (flow.after_no_text or flow.after_text or "Is there anything else you'd like?"),
-            false
-          )
-
-          pending_ack[player_id] = {
-            box_id = box_id,
-            ui = ui,
-            menu = menu,
-            phase = 2,
-            choice_id = choice_id,
-            choice_text = choice_text,
-            flow = flow,
-          }
-        end,
-
-        cancel_behavior = "select_no",
-      })
-    end,
+        menu = menu,
+        flow = flow,
+        choice_id = choice_id,
+        choice_text = choice_text,
+      }
+      return
+end,
   })
 end
 

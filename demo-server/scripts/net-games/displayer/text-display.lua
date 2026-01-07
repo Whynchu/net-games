@@ -181,11 +181,21 @@ end
 local function normalize_text(text)
   if not text or text == "" then return text end
 
+  -- =====================================================
+  -- HARD SANITIZE: prevent "blank first letter" issues
+  -- - strip Windows CR (CRLF -> LF leaves '\r' behind)
+  -- - strip UTF-8 BOM if it ever sneaks in
+  -- - convert NBSP to normal space
+  -- =====================================================
+  text = text:gsub("\r", "")
+  text = text:gsub("\239\187\191", "") -- UTF-8 BOM
+  text = text:gsub("\194\160", " ")    -- NBSP
+
   -- UTF-8 smart punctuation
-  text = text:gsub("’", "'"):gsub("‘", "'")
-  text = text:gsub("“", '"'):gsub("”", '"')
-  text = text:gsub("–", "-"):gsub("—", "-")
-  text = text:gsub("…", "...")
+  text = text:gsub("\x92", "'"):gsub("\x91", "'")
+  text = text:gsub("\x93", '"'):gsub("\x94", '"')
+  text = text:gsub("\x96", "-"):gsub("\x97", "-")
+  text = text:gsub("\x85", "...")
 
   -- CP1252 bytes (common on Windows)
   local b = string.char
@@ -196,6 +206,7 @@ local function normalize_text(text)
 
   return text
 end
+
 
 
 -- Match FontSystem's anim naming: strip trailing "_BLACK" for anim_state prefixes
