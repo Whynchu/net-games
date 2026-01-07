@@ -400,6 +400,10 @@ function PromptMenuInstance:new(player_id, opts)
   -- Text intro animation state
   o._text_intro_active = false
   o._text_intro_t = 0
+  -- Text intro speed boost (temporary, per intro run)
+  o._text_intro_speed_mult = 1
+  o._text_intro_boosted = false
+
 
   -- OPEN anim timing (must outlive a single tick)
   o.menu_bg_open_t = 0
@@ -975,11 +979,15 @@ function PromptMenuInstance:start_text_intro()
   if not (self.layout and self.layout.text_intro_enabled) then
     self._text_intro_active = false
     self._text_intro_t = 0
+    self._text_intro_speed_mult = 1
+    self._text_intro_boosted = false
     return
   end
 
   self._text_intro_active = true
   self._text_intro_t = 0
+  self._text_intro_speed_mult = 1
+  self._text_intro_boosted = false
 end
 
 
@@ -1165,7 +1173,7 @@ function PromptMenuInstance:update(_dt)
   -- Text intro animation timing (fade/slide/cascade)
   -- =====================================================
   if self._text_intro_active then
-    local dt = _dt or 0
+    local dt = (_dt or 0) * (self._text_intro_speed_mult or 1)
     self._text_intro_t = (self._text_intro_t or 0) + dt
 
     local dur = (tonumber(self.layout.text_intro_frames) or 20) / 60
@@ -1175,11 +1183,14 @@ function PromptMenuInstance:update(_dt)
     local end_t = dur + math.max(0, (rows - 1) * stagger)
     if self._text_intro_t >= end_t then
       self._text_intro_active = false
+      self._text_intro_speed_mult = 1
+      self._text_intro_boosted = false
     end
 
     -- Force redraw while intro is running so x/opacity updates each tick
     self:render_menu_contents(true)
   end
+
 
 
   -- While printing: allow hold-confirm to fast-forward textbox; menu locked
@@ -1203,6 +1214,13 @@ function PromptMenuInstance:update(_dt)
 
       if Input.is_down(player_id, "confirm") then
         Input.pop(player_id, "confirm")
+
+        -- If menu intro is still animating, speed it up for the remainder of this intro
+        if self._text_intro_active and not self._text_intro_boosted then
+          self._text_intro_boosted = true
+          self._text_intro_speed_mult = 5
+        end
+
         Displayer.Text.advance_text_box(player_id, self.box_id)
       end
       return
