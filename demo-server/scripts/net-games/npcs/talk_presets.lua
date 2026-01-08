@@ -249,7 +249,7 @@ P.vert_menus = {
     shop_item_z_add = 4,
 
     shop_item_intro_enabled = true,
-    shop_item_intro_frames = 8,
+    shop_item_intro_frames = 12,
 
     -- IMPORTANT: set these to the real pixel size of the PNGs
     shop_item_w = 56,
