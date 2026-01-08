@@ -157,6 +157,10 @@ end
 local function draw_sprite(inst, sprite_id, draw_id, x, y, z, s, anim_state)
   alloc_ui_sprites(inst)
 
+  -- pixel-snap to avoid sub-pixel shimmer/jitter
+  if x ~= nil then x = math.floor(x + 0.5) end
+  if y ~= nil then y = math.floor(y + 0.5) end
+
   local opts = {
     id = draw_id,
     x = x, y = y, z = z,
@@ -174,6 +178,10 @@ end
 local function draw_sprite_xy(inst, sprite_id, draw_id, x, y, z, sx, sy, anim_state)
   alloc_ui_sprites(inst)
 
+  -- pixel-snap to avoid sub-pixel shimmer/jitter
+  if x ~= nil then x = math.floor(x + 0.5) end
+  if y ~= nil then y = math.floor(y + 0.5) end
+
   local opts = {
     id = draw_id,
     x = x, y = y, z = z,
@@ -187,6 +195,7 @@ local function draw_sprite_xy(inst, sprite_id, draw_id, x, y, z, sx, sy, anim_st
 
   Net.player_draw_sprite(inst.player_id, sprite_id, opts)
 end
+
 
 
 local function draw_menu_frame_overlay(inst, draw_id, x, y, z, s, anim_state, frame_cfg)
@@ -1353,6 +1362,9 @@ end
 
 
 function PromptMenuInstance:update(_dt)
+  -- clamp dt to reduce visible stutter from occasional frame-time spikes
+  local dt = math.min(_dt or 0, 1/30)
+
   local player_id = self.player_id
   local st = Displayer.Text.getTextBoxState(player_id, self.box_id)
   -- =====================================================
@@ -1377,7 +1389,7 @@ function PromptMenuInstance:update(_dt)
   -- CLOSE animation timing (must run even after OPEN is done)
   -- =====================================================
   if self.menu_bg_close_playing then
-    local dt = _dt or 0
+    local dt = dt
     self.menu_bg_close_t = self.menu_bg_close_t + dt
 
     if self.menu_bg_close_t >= (self.menu_bg_close_total or 0.60) then
@@ -1399,7 +1411,7 @@ function PromptMenuInstance:update(_dt)
   -- OPEN animation timing
   -- =====================================================
   if self.menu_bg_open_playing then
-    local dt = _dt or 0
+    local dt = dt
     self.menu_bg_open_t = self.menu_bg_open_t + dt
 
     if self.menu_bg_open_t >= (self.menu_bg_open_total or 0.58) then
@@ -1449,7 +1461,7 @@ function PromptMenuInstance:update(_dt)
   -- Shop item intro "unfold" timing (NEW)
   -- =====================================================
     if self._shop_item_intro_active then
-      local dt = _dt or 0
+      local dt = dt
       self._shop_item_intro_t = (self._shop_item_intro_t or 0) + dt
 
       local frames = tonumber(self.layout.shop_item_intro_frames) or 10
@@ -1472,7 +1484,8 @@ function PromptMenuInstance:update(_dt)
   -- Text intro animation timing (fade/slide/cascade)
   -- =====================================================
   if self._text_intro_active then
-    local dt = (_dt or 0) * (self._text_intro_speed_mult or 1)
+    local dt = dt * (self._text_intro_speed_mult or 1)
+
     self._text_intro_t = (self._text_intro_t or 0) + dt
 
     local dur = (tonumber(self.layout.text_intro_frames) or 20) / 60
@@ -1583,7 +1596,7 @@ function PromptMenuInstance:update(_dt)
 
 
   local total = #self.options
-  self:update_cursor_bob(_dt)
+  self:update_cursor_bob(dt)
 
     if Input.pop(player_id, "up") then
       local prev = self.selection_index

@@ -206,8 +206,8 @@ P.vert_menus = {
     padding_y = 4,
 
     text_intro_enabled = true,
-    text_intro_frames = 18,
-    text_intro_stagger_frames = 12,
+    text_intro_frames = 16,
+    text_intro_stagger_frames = 8,
     text_intro_slide_px = 6,
 
     scrollbar_x = 452,
@@ -249,7 +249,7 @@ P.vert_menus = {
     shop_item_z_add = 4,
 
     shop_item_intro_enabled = true,
-    shop_item_intro_frames = 12,
+    shop_item_intro_frames = 8,
 
     -- IMPORTANT: set these to the real pixel size of the PNGs
     shop_item_w = 56,
