@@ -2139,9 +2139,11 @@ function PromptVertical.menu(player_id, opts)
   ensure_listener()
   ensure_tick()
 
-  if PromptVertical.instances[player_id] then
-    PromptVertical.close(player_id, "replace")
-  end
+if PromptVertical.instances[player_id] then
+  -- HARD finalize to avoid sprite/draw ID overlap between instances
+  PromptVertical._finalize_close(player_id, "replace", { keep_textbox = true })
+end
+
 
   set_input_locked(player_id, true)
 
