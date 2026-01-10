@@ -1,14 +1,14 @@
 --=====================================================
 -- prog_shop.lua
--- Default PROG shop NPC (using Talk.vert_menu + shop skin)
--- Now wired to sell HPMem items with real money checks (ezmemory)
+-- Sapphire PROG shop NPC (Talk.vert_menu + shop skin)
+-- Sells HPMem items with real money checks + live money UI updates
 --=====================================================
 
-local Talk    = require("scripts/net-games/npcs/talk")
+local Talk     = require("scripts/net-games/npcs/talk")
 local ezmemory = require("scripts/ezlibs-scripts/ezmemory")
 local Presets  = require("scripts/net-games/npcs/talk_presets")
 
-local PRICE_PER = 50
+local PRICE_PER = 125000
 
 local ERROR_SFX_PATH = "/server/assets/net-games/sfx/card_error.ogg"
 
@@ -21,7 +21,6 @@ local function play_error_sfx(player_id)
   end
 end
 
-
 local function fmt_m(n)
   return tostring(tonumber(n) or 0) .. "$"
 end
@@ -31,24 +30,34 @@ local function safe_money(player_id)
     local m = ezmemory.get_player_money(player_id)
     if type(m) == "number" then return m end
   end
-  local m = Net.get_player_money(player_id)
-  if type(m) ~= "number" then return 0 end
-  return m
+
+  if Net.get_player_money then
+    local m = Net.get_player_money(player_id)
+    if type(m) == "number" then return m end
+  end
+
+  return 0
 end
 
 local function spend_money_persistent(player_id, amount, have_money)
   if ezmemory and type(ezmemory.spend_money_persistent) == "function" then
     return ezmemory.spend_money_persistent(player_id, amount, have_money)
   end
-  Net.set_player_money(player_id, (have_money or safe_money(player_id)) - amount)
+
+  if Net.set_player_money then
+    Net.set_player_money(player_id, (have_money or safe_money(player_id)) - amount)
+  end
 end
 
 local function ensure_hpmem_item()
   if not Net.create_item then return end
-  local ok, exists = pcall(function() return Net.list_items and Net.list_items()["HPMem"] end)
+
+  -- If it exists already, do nothing
+  local ok, exists = pcall(function()
+    return Net.list_items and Net.list_items()["HPMem"]
+  end)
   if ok and exists then return end
 
-  -- Very small "safe create": if it already exists, create_item may error, so pcall.
   pcall(function()
     Net.create_item("HPMem", {
       name = "HPMem",
@@ -73,46 +82,62 @@ local function apply_plus_max_hp_now(player_id, amount)
 end
 
 local function qty_from_choice_id(choice_id)
-  -- choice ids are "HPMEM_1" .. "HPMEM_5"
   local n = tostring(choice_id):match("^HPMEM_(%d+)$")
   return tonumber(n) or 0
 end
 
 local function build_hpmem_options()
-  return {
-    { id = "HPMEM_1", text = ("HPMem  %d$"):format(PRICE_PER * 1) },
-    { id = "HPMEM_2", text = ("HPMem2 %d$"):format(PRICE_PER * 2) },
-    { id = "HPMEM_3", text = ("HPMem3 %d$"):format(PRICE_PER * 3) },
-    { id = "HPMEM_4", text = ("HPMem4 %d$"):format(PRICE_PER * 4) },
-    { id = "HPMEM_5", text = ("HPMem5 %d$"):format(PRICE_PER * 5) },
-    { id = "HPMEM_6", text = ("HPMem6 %d$"):format(PRICE_PER * 6) },
-    { id = "HPMEM_7", text = ("HPMem7 %d$"):format(PRICE_PER * 7) },
-    { id = "HPMEM_8", text = ("HPMem8 %d$"):format(PRICE_PER * 8) },
-    { id = "HPMEM_9", text = ("HPMem9 %d$"):format(PRICE_PER * 9) },
-    { id = "HPMEM_10", text = ("HPMem10 %d$"):format(PRICE_PER * 10) },
-    { id = "HPMEM_11", text = ("HPMem11 %d$"):format(PRICE_PER * 11) },
-    { id = "HPMEM_12", text = ("HPMem12 %d$"):format(PRICE_PER * 12) },
-    { id = "HPMEM_13", text = ("HPMem13 %d$"):format(PRICE_PER * 13) },
-    { id = "HPMEM_14", text = ("HPMem14 %d$"):format(PRICE_PER * 14) },
-    { id = "exit",   text = "Exit" },
-  }
+  local opts = {}
+  for i = 1, 14 do
+    local opt = {
+      id = ("HPMEM_%d"):format(i),
+      text = ("HPMemory%-2d %d$"):format(i, PRICE_PER * i),
+    }
+
+    -- Only HPMEM_10 gets a custom card image
+    if i == 14 then
+      opt.image   = "/server/assets/net-games/ui/bewd.png"
+      opt.image_w = 40
+      opt.image_h = 40
+    end
+
+    if i == 1 then
+      opt.image   = "/server/assets/net-games/ui/card_shop_hpmem1.png"
+
+    end
+
+    if i == 2 then
+      opt.image   = "/server/assets/net-games/ui/card_shop_hpmem2.png"
+
+    end
+
+    if i == 3 then
+      opt.image   = "/server/assets/net-games/ui/card_shop_hpmem3.png"
+
+    end
+
+    table.insert(opts, opt)
+
+  end
+  table.insert(opts, { id = "exit", text = "Exit" })
+  return opts
 end
 
 Talk.npc({
   area_id = "default",
-  object  = "ProgShop", -- add this object name in Tiled
-  name    = "SHOP PROG",
+  object  = "ProgShop2", -- must match the Tiled object name
+  name    = "SAPPHIRE PROG",
 
-  -- Default PROG overworld sprite + animation
-  sprite_id = "prog_ow",
-  animation = "idle_down",
+  -- Sapphire overworld assets
+  texture_path   = "/server/assets/ow/prog/prog_ow_sapphire.png",
+  animation_path = "/server/assets/ow/prog/prog_ow.animation",
 
   on_interact = function(player_id, _bot_id, bot_name)
     -- Build a mutable layout table so we can update money live
     local layout = Presets.get_vert_menu_layout("prog_prompt_shop")
     layout.monies_amount_text = fmt_m(safe_money(player_id))
-
-    -- Shop menu skin (menu window visuals only; NPC stays default PROG)
+    layout.frame = Presets.frames.sapphire
+    -- Shop menu skin
     local assets = {
       menu_bg       = "/server/assets/net-games/ui/prompt_vert_menu_shop_an.png",
       menu_bg_anim  = "/server/assets/net-games/ui/prompt_vert_menu_an.animation",
@@ -121,11 +146,21 @@ Talk.npc({
     }
 
     Talk.vert_menu(player_id, bot_name, {
-      mugshot = "progMug",
+      mug = "prog_sapphire",
       nameplate = "prog",
-      -- no frame dye: default look
+
+      -- Sapphire frame dye (tints textbox + nameplate frame overlay)
+      -- (If you want a different sapphire, change these RGB values.)
+      frame = "sapphire",
     }, {
-      intro_text = "Just let me know if you see anything you like.",
+      -- Add the missing open question + keep your normal intro line
+      open_question = "Hey!{p_1} Wanna check out my shop?!",
+      intro_text    = "Just let me know if you see anything you like.",
+      texts = {
+        decline_open = "Alright!{p_0.5} Come back if you change your mind!",
+        -- (optional alias) open_no = "Alright!{p_0.5} Come back if you change your mind!",
+      },
+
       options = build_hpmem_options(),
 
       sfx   = "card_desc",
@@ -134,47 +169,50 @@ Talk.npc({
       assets = assets,
       layout = layout,
 
-      -- This is the new hook we add to Talk/TalkVertMenu
       on_select = function(ctx)
         if ctx.choice_id == "exit" then return end
 
         local qty = qty_from_choice_id(ctx.choice_id)
         if qty <= 0 then
-          return { post_text = "Huh? That item is busted.", suppress_post_select = false }
+          return { post_text = "Huh? That item is busted." }
         end
 
         local cost  = PRICE_PER * qty
         local money = safe_money(ctx.player_id)
 
-          if money < cost then
-            play_error_sfx(ctx.player_id)
-            return {
-              post_text = ("Sorry pal! you don't have enough money! Need %d$." ):format(cost),
-              suppress_confirm_sfx = true,
-              after_branch = "no",
-            }
+        -- Not enough money: play error sfx and veto confirm sfx
+        if money < cost then
+          play_error_sfx(ctx.player_id)
+          return {
+            post_text = ("Sorry pal,{p_0.5} you don't have enough monies!"):format(cost, money),
+            suppress_confirm_sfx = true,
+
+            -- If your patched talk_vert_menu uses after_branch, this nudges it to the "no" vibe.
+            after_branch = "no",
+          }
         end
 
+        -- Successful purchase
         ensure_hpmem_item()
         spend_money_persistent(ctx.player_id, cost, money)
 
         if ezmemory and type(ezmemory.give_player_item) == "function" then
-          ezmemory.give_player_item(ctx.player_id, "HPMem", qty)
+            for i = 1, qty do
+              ezmemory.give_player_item(ctx.player_id, "HPMem", 1)
+            end
+
         end
 
-        apply_plus_max_hp_now(ctx.player_id, 20 * qty)
+        --apply_plus_max_hp_now(ctx.player_id, 20 * qty)
 
-        -- Refresh the money display in the menu (update the LIVE menu layout, then force redraw)
+        -- Refresh money display immediately
         local new_money = safe_money(ctx.player_id)
-
         if ctx.menu and ctx.menu.layout then
           ctx.menu.layout.monies_amount_text = fmt_m(new_money)
-          -- force redraw so the amount actually updates immediately
           if ctx.menu.render_menu_contents then
             ctx.menu:render_menu_contents(true)
           end
         end
-
 
         return { post_text = ("Bought %dx HPMem! +%d MaxHP."):format(qty, 20 * qty) }
       end,

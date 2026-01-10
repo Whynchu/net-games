@@ -91,6 +91,107 @@ local function clamp(v, a, b)
   return v
 end
 
+-- =====================================================
+-- Per-character width cache (variable-width font support)
+-- =====================================================
+local _CHAR_W_CACHE = {}  -- key: font|scale|char -> width
+
+local function char_w(font, scale, ch)
+  local key = tostring(font) .. "|" .. tostring(scale) .. "|" .. tostring(ch)
+  local w = _CHAR_W_CACHE[key]
+  if w then return w end
+  w = FontSystem:getTextWidth(ch, font, scale)
+  _CHAR_W_CACHE[key] = w
+  return w
+end
+
+-- Returns a string window of pixel width <= clip_px, starting at pixel offset start_px,
+-- looping across (text .. spacer .. text) so it wraps smoothly.
+local function marquee_window(text, font, scale, clip_px, start_px, gap_px)
+  if clip_px <= 0 then return "" end
+  if text == "" then return "" end
+
+  -- Build loop string: TEXT + (gap spaces) + TEXT
+  local space_px = math.max(1, char_w(font, scale, " "))
+  local gap_spaces = math.max(1, math.ceil((gap_px or 24) / space_px))
+  local spacer = string.rep(" ", gap_spaces)
+
+    -- One-cycle loop: TEXT + GAP (gap will happen every cycle now)
+    local loop = text .. spacer
+
+
+  -- Measure loop width once (approx exact via per-char sum)
+  local loop_w = 0
+  for i = 1, #loop do
+    loop_w = loop_w + char_w(font, scale, loop:sub(i, i))
+  end
+  if loop_w <= 0 then return text end
+
+  local px = (start_px or 0) % loop_w
+
+  -- Advance to the start character by pixel offset
+  local i = 1
+  while i <= #loop and px > 0 do
+    local cw = char_w(font, scale, loop:sub(i, i))
+    if px < cw then
+      -- start in the middle of a glyph: just start at next glyph (good enough visually)
+      i = i + 1
+      break
+    end
+    px = px - cw
+    i = i + 1
+  end
+  if i > #loop then i = 1 end
+
+  -- Collect characters until we fill clip_px
+  local out = {}
+  local used = 0
+  local j = i
+  while used < clip_px and #out < (#loop + 4) do
+    if j > #loop then j = 1 end
+    local ch = loop:sub(j, j)
+    local cw = char_w(font, scale, ch)
+    if (used + cw) > clip_px then break end
+    out[#out + 1] = ch
+    used = used + cw
+    j = j + 1
+  end
+
+  return table.concat(out), loop_w
+end
+
+-- Clip text to a pixel width; if clipped, append "..."
+local function ellipsis_clip(text, font, scale, clip_px)
+  if clip_px <= 0 then return "" end
+  if text == "" then return "" end
+
+  local full_w = FontSystem:getTextWidth(text, font, scale)
+  if full_w <= clip_px then
+    return text
+  end
+
+  local dots = "..."
+  local dots_w = FontSystem:getTextWidth(dots, font, scale)
+  if dots_w >= clip_px then
+    return dots  -- nothing else fits
+  end
+
+  local out = {}
+  local used = 0
+  for i = 1, #text do
+    local ch = text:sub(i, i)
+    local cw = char_w(font, scale, ch)
+    if (used + cw + dots_w) > clip_px then
+      break
+    end
+    out[#out + 1] = ch
+    used = used + cw
+  end
+
+  return table.concat(out) .. dots
+end
+
+
 local function ensure_tick()
   if PromptVertical._tick_attached then return end
   PromptVertical._tick_attached = true
@@ -348,6 +449,10 @@ local function normalize_layout(layout)
     shop_item_z_add   = layout.shop_item_z_add,
 
     shop_item_swap_exit = (layout.shop_item_swap_exit == true),
+    
+    -- Slot target size (UI pixels, pre-scale)
+    shop_item_slot_w = tonumber(layout.shop_item_slot_w or 56) or 56,
+    shop_item_slot_h = tonumber(layout.shop_item_slot_h or 48) or 48,
 
     -- Shop item intro "unfold" animation (NEW)
     shop_item_intro_enabled = (layout.shop_item_intro_enabled == true),
@@ -359,6 +464,10 @@ local function normalize_layout(layout)
     shop_exit_w = tonumber(layout.shop_exit_w or 0) or 0,
     shop_exit_h = tonumber(layout.shop_exit_h or 0) or 0,
 
+    -- Text clip tuning (screen pixels)
+    text_clip_gap = tonumber(layout.text_clip_gap or 8) or 8,
+
+    text_scroll_delay = tonumber(layout.text_scroll_delay or 1.0) or 1.0,
 
   }
 
@@ -404,6 +513,8 @@ function PromptMenuInstance:new(player_id, opts)
     SCROLL     = "pv_" .. base .. "_spr_scroll",
     SHOP_ITEM  = "pv_" .. base .. "_spr_shop_item",
     SHOP_EXIT  = "pv_" .. base .. "_spr_shop_exit",
+    SHOP_ART   = "pv_" .. base .. "_spr_shop_art",
+
   }
 
   o._sprites_allocated = false
@@ -475,11 +586,41 @@ function PromptMenuInstance:new(player_id, opts)
 
     shop_item = base .. "_menu_shop_item",
     shop_exit = base .. "_menu_shop_exit",
+    shop_art  = base .. "_menu_shop_art",
+
   }
+  -- Dynamic shop art cache (avoids sprite/draw id rebinding issues)
+  o._shop_art_sprite_by_path = {}   -- art_path -> sprite_id
+  o._shop_art_sprite_seq = 0        -- monotonic id counter (DO NOT use #table)
+  o._shop_art_active_draw_id = nil  -- currently drawn art draw_id
+  o._shop_art_active_path = nil     -- currently drawn art path
 
   -- Stable text display IDs (one per visible row) to prevent flicker.
   -- We reuse these IDs and redraw in-place instead of erasing/recreating every move.
   o.menu_text_ids = {}
+
+    -- =========================================
+    -- Horizontal scroll state (selected row only)
+    -- =========================================
+o._hscroll = {
+  active = false,      -- “we are currently animating”
+  overflow = false,    -- “selected row is too wide”
+  offset = 0,
+  speed = 86,         -- px/sec
+  gap = 32,            -- px gap in the loop
+  text_width = 0,
+
+  delay_loop = 1.0,    -- base delay (used after wrap)
+  delay_initial = 1.0, -- longer delay when first landing on an item
+  delay = 1.0,         -- the currently-active delay (initial or loop)
+
+
+  hold_t = 0,          -- how long we’ve hovered this item
+  key = nil,           -- used to detect selection/text changes
+  loop_width = 0,
+}
+
+
 
   -- Cursor bob state (used only when menu input is active)
   o.cursor_phase  = 0
@@ -503,7 +644,10 @@ function PromptMenuInstance:new(player_id, opts)
   o._shop_item_intro_active = false
   o._shop_item_intro_t = 0
 
-
+  -- Overflow marquee state (driven by HIGHLIGHT visibility, not cursor)
+  o._ov_text = ""
+  o._ov_px = 0
+  o._ov_hold_t = 0
 
   -- OPEN anim timing (must outlive a single tick)
   o.menu_bg_open_t = 0
@@ -644,6 +788,7 @@ function PromptMenuInstance:start_close(reason, keep_textbox)
 
   erase_sprite(self.player_id, self.draw.shop_item)
   erase_sprite(self.player_id, self.draw.shop_exit)
+  erase_sprite(self.player_id, self.draw.shop_art)
 
 
 
@@ -691,6 +836,14 @@ end
 
 function PromptMenuInstance:render_menu_window()
   local L = self.layout
+    local base = tonumber(L.text_scroll_delay) or 1.0
+
+    -- First-hover delay is 2x; loop delay stays at base.
+    -- (So if base=0.24 => initial=0.48, loop=0.24)
+    self._hscroll.delay_loop = base
+    self._hscroll.delay_initial = base * 1.75
+    self._hscroll.delay = self._hscroll.delay_initial
+
   local x, y = self:menu_origin()
   -- Shift draw position so bottom-right stays anchored
     x = x + (MENU_W * L.scale)
@@ -771,6 +924,34 @@ function PromptMenuInstance:update_scroll_for_selection(force)
 
   return force or changed
 end
+
+function PromptMenuInstance:page_jump_to(target_index)
+  local L = self.layout
+  local total = #self.options
+  local rows = L.visible_rows
+
+  -- Clamp selection
+  target_index = clamp(target_index, 1, total)
+  self.selection_index = target_index
+
+  -- Pin the selected item to the TOP of the window when possible
+  local max_top = math.max(1, total - rows + 1)
+  self.scroll_top_index = clamp(target_index, 1, max_top)
+
+  -- Reset scroll/intro state so it feels clean
+  if self._hscroll then
+    self._hscroll.active = false
+    self._hscroll.hold_t = 0
+    self._hscroll.offset = 0
+    self._hscroll.loop_width = 0
+    self._hscroll.key = nil
+  end
+
+  self:restart_shop_item_intro()
+  play_cursor_move_sfx(self.player_id)
+  self:render_menu_contents(true)
+end
+
 
 local function set_textbox_indicator_enabled(player_id, box_id, enabled)
   local bd = Displayer.Text.getTextBoxData(player_id, box_id)
@@ -869,6 +1050,78 @@ function PromptMenuInstance:update_cursor_bob(dt)
 
 end
 
+-- Highlight bar is the real "selection is live" signal.
+-- Cursor may be hidden while locked, but highlight remains.
+function PromptMenuInstance:highlight_visible()
+  if self.state ~= STATE.MENU then return false end
+
+  local rows = tonumber(self.layout.visible_rows) or 5
+  local top  = self.scroll_top_index or 1
+  local sel  = self.selection_index or 1
+
+  local sel_row = sel - top
+  return (sel_row >= 0 and sel_row < rows)
+end
+
+function PromptMenuInstance:reset_overflow()
+  local sel = self.selection_index or 1
+  local cur = (self.options and self.options[sel]) or nil
+  self._ov_text = tostring(cur and cur.text or "")
+  self._ov_px = 0
+  self._ov_hold_t = 0
+end
+
+function PromptMenuInstance:update_overflow(dt)
+  if not self:highlight_visible() then return false end
+  if not (self.layout and self.layout.overflow_enabled) then return false end
+
+  local scale = tonumber(self.layout.scale) or 2.0
+  local font  = tostring(self.layout.font or "THIN")
+
+  -- Clip width in pixels (screen space)
+  local clip_px = tonumber(self.layout.overflow_clip_px)
+  if not clip_px then
+    -- Safe default: you can tune later in layout
+    clip_px = 140 * scale
+  end
+
+  local sel = self.selection_index or 1
+  local cur = (self.options and self.options[sel]) or nil
+  local text = tostring(cur and cur.text or "")
+
+  -- If selection text changed, restart
+  if text ~= (self._ov_text or "") then
+    self:reset_overflow()
+    self._ov_text = text
+  end
+
+  -- Only scroll if it actually overflows
+  local full_w = FontSystem:getTextWidth(text, font, scale)
+  if full_w <= clip_px then
+    -- No overflow => keep it clean
+    if self._ov_px ~= 0 or self._ov_hold_t ~= 0 then
+      self._ov_px = 0
+      self._ov_hold_t = 0
+      return true
+    end
+    return false
+  end
+
+  local delay = tonumber(self.layout.overflow_delay_sec) or 0.60
+  local speed = tonumber(self.layout.overflow_speed_px_per_sec) or (40 * scale)
+
+  self._ov_hold_t = (self._ov_hold_t or 0) + dt
+  if self._ov_hold_t < delay then
+    return false
+  end
+
+  local prev_px = self._ov_px or 0
+  self._ov_px = prev_px + (speed * dt)
+
+  -- Only redraw if it actually moved by at least ~1px (prevents spam)
+  return (math.floor(prev_px) ~= math.floor(self._ov_px))
+end
+
 
 
 function PromptMenuInstance:render_menu_contents(force)
@@ -895,9 +1148,10 @@ end
   local x0, y0 = self:menu_origin()
 
 -- ========================
--- SHOP label: "MONIES" (WIDE font) - top-right of menu window
+-- SHOP: monies label + amount, and (optional) shop item card slot
 -- ========================
 do
+  -- ---- MONIES label + amount ----
   if L.monies_label_enabled then
     local scale = tonumber(L.scale) or 2.0
     local text  = tostring(L.monies_label_text or "MONIES")
@@ -908,22 +1162,17 @@ do
     local zadd  = tonumber(L.monies_label_z_add) or 4
 
     local tw = FontSystem:getTextWidth(text, font, scale)
-
-    -- menu sprite is drawn anchored to bottom-right (x0,y0 is top-left),
-    -- so MENU_W is the correct width reference here.
     local mx = x0 + (MENU_W * scale) - pad_x - tw
     local my = y0 + pad_y
 
     FontSystem:drawTextWithId(
-      self.player_id,
-      text,
+      self.player_id, text,
       mx, my,
-      font,
-      scale,
+      font, scale,
       (L.z + zadd),
       self.draw.monies
     )
-        -- Amount line under MONIES (THIN)
+
     if L.monies_amount_enabled then
       local atext = tostring(L.monies_amount_text or "0$")
       local afont = tostring(L.monies_amount_font or "THIN")
@@ -932,116 +1181,181 @@ do
       local ay_off = (tonumber(L.monies_amount_offset_y) or 10) * scale
 
       local atw = FontSystem:getTextWidth(atext, afont, scale)
-
-      -- Right-align to the same right edge as MONIES, then apply offsets
       local ax = (mx + tw) - atw + ax_off
       local ay = my + ay_off
 
       FontSystem:drawTextWithId(
-        self.player_id,
-        atext,
+        self.player_id, atext,
         ax, ay,
-        afont,
-        scale,
+        afont, scale,
         (L.z + zadd),
         self.draw.monies_amount
       )
     else
       FontSystem:eraseTextDisplay(self.player_id, self.draw.monies_amount)
     end
-
-        if L.shop_item_enabled then
-          local scale = tonumber(L.scale) or 2.0
-          local ix = x0 + (MENU_W * scale) - (tonumber(L.shop_item_pad_x) or 0)
-          local iy = y0 + (tonumber(L.shop_item_pad_y) or 0)
-          local zadd = tonumber(L.shop_item_z_add) or 3
-
-          local cur = (self.options and self.selection_index) and self.options[self.selection_index] or nil
-          local cur_id = cur and cur.id or nil
-          local cur_text = cur and cur.text or nil
-
-          local is_exit_hover =
-            (self.selection_index == self.exit_index) or
-            (cur_id ~= nil and tostring(cur_id) == "exit") or
-            (cur_text ~= nil and string.lower(tostring(cur_text)) == "exit")
-
-          if (L.shop_item_swap_exit == true) and is_exit_hover then
-            -- show EXIT, hide ITEM
-            erase_sprite(self.player_id, self.draw.shop_item)
-            local w = tonumber(L.shop_exit_w) or 0
-            local h = tonumber(L.shop_exit_h) or 0
-
-            local sx = scale
-            local sy = scale
-            local dx = ix
-            local dy = iy
-
-            if self._shop_item_intro_active and w > 0 then
-              local frames = tonumber(L.shop_item_intro_frames) or 10
-              local dur = frames / 60
-              local raw = math.min(1, (self._shop_item_intro_t or 0) / math.max(0.0001, dur))
-
-              -- Ease-in that stays thin longer, then snaps open
-              local t = raw * raw * raw
-
-              -- start thinner than zero-width visually (BN-style snap)
-              local min_p = 0.05   -- 5% width floor
-              local p = math.max(min_p, t)
-
-              sx = scale * p
-
-              local cx = ix + (w * scale) / 2
-              dx = cx - (w * sx) / 2
-            end
-
-            draw_sprite_xy(self, self.spr.SHOP_EXIT, self.draw.shop_exit, dx, dy, (L.z + zadd), sx, sy)
-
-          else
-            -- show ITEM, hide EXIT
-            erase_sprite(self.player_id, self.draw.shop_exit)
-            local w = tonumber(L.shop_item_w) or 0
-            local h = tonumber(L.shop_item_h) or 0
-
-            local sx = scale
-            local sy = scale
-            local dx = ix
-            local dy = iy
-
-            if self._shop_item_intro_active and w > 0 then
-              local frames = tonumber(L.shop_item_intro_frames) or 10
-              local dur = frames / 60
-              local raw = math.min(1, (self._shop_item_intro_t or 0) / math.max(0.0001, dur))
-
-              -- Ease-in that stays thin longer, then snaps open
-              local t = raw * raw * raw
-
-              -- start thinner than zero-width visually (BN-style snap)
-              local min_p = 0.05   -- 5% width floor
-              local p = math.max(min_p, t)
-
-              sx = scale * p
-
-              -- keep center fixed while sx changes
-              local cx = ix + (w * scale) / 2
-              dx = cx - (w * sx) / 2
-            end
-
-            draw_sprite_xy(self, self.spr.SHOP_ITEM, self.draw.shop_item, dx, dy, (L.z + zadd), sx, sy)
-
-          end
-        else
-          erase_sprite(self.player_id, self.draw.shop_item)
-          erase_sprite(self.player_id, self.draw.shop_exit)
-        end
-
-
-
-
   else
     FontSystem:eraseTextDisplay(self.player_id, self.draw.monies)
     FontSystem:eraseTextDisplay(self.player_id, self.draw.monies_amount)
   end
 
+  -- ---- Shop card slot (independent of monies label) ----
+  if L.shop_item_enabled then
+    local scale = tonumber(L.scale) or 2.0
+    local ix = x0 + (MENU_W * scale) - (tonumber(L.shop_item_pad_x) or 0)
+    local iy = y0 + (tonumber(L.shop_item_pad_y) or 0)
+    local zadd = tonumber(L.shop_item_z_add) or 3
+
+    local cur = (self.options and self.selection_index) and self.options[self.selection_index] or nil
+
+    local art_path = cur and (cur.image or cur.img or cur.icon) or nil
+
+    -- Slot target size (UI pixels, pre-scale)
+    local slot_w = tonumber(L.shop_item_slot_w) or 56
+    local slot_h = tonumber(L.shop_item_slot_h) or 48
+
+    -- Optional source metrics (only needed if your PNG is NOT slot-sized)
+    local art_w = tonumber(cur and (cur.image_w or cur.img_w or cur.icon_w)) or 0
+    local art_h = tonumber(cur and (cur.image_h or cur.img_h or cur.icon_h)) or 0
+
+    -- If metrics are omitted, assume the asset is already slot-sized.
+    if art_w <= 0 then art_w = slot_w end
+    if art_h <= 0 then art_h = slot_h end
+
+    local has_art = (type(art_path) == "string" and art_path ~= "")
+
+    local cur_id = cur and cur.id or nil
+    local cur_text = cur and cur.text or nil
+
+    local is_exit_hover =
+      (self.selection_index == self.exit_index) or
+      (cur_id ~= nil and tostring(cur_id) == "exit") or
+      (cur_text ~= nil and string.lower(tostring(cur_text)) == "exit")
+
+    if (L.shop_item_swap_exit == true) and is_exit_hover then
+      -- show EXIT, hide ITEM + ART
+      erase_sprite(self.player_id, self.draw.shop_item)
+        -- HARD DEHOOK: ensure any previously drawn custom art is gone (dynamic draw id)
+        if self._shop_art_active_draw_id then
+          erase_sprite(self.player_id, self._shop_art_active_draw_id)
+          self._shop_art_active_draw_id = nil
+          self._shop_art_active_path = nil
+        end
+
+
+      local w = tonumber(L.shop_exit_w) or 0
+      local sx = scale
+      local sy = scale
+      local dx = ix
+      local dy = iy
+
+      if self._shop_item_intro_active and w > 0 then
+        local frames = tonumber(L.shop_item_intro_frames) or 10
+        local dur = frames / 60
+        local raw = math.min(1, (self._shop_item_intro_t or 0) / math.max(0.0001, dur))
+        local t = raw * raw * raw
+        local min_p = 0.05
+        local p = math.max(min_p, t)
+
+        sx = scale * p
+        local cx = ix + (w * scale) / 2
+        dx = cx - (w * sx) / 2
+      end
+
+      draw_sprite_xy(self, self.spr.SHOP_EXIT, self.draw.shop_exit, dx, dy, (L.z + zadd), sx, sy)
+
+    else
+      -- hide EXIT
+      erase_sprite(self.player_id, self.draw.shop_exit)
+
+if has_art then
+  -- show ART stretched to slot, hide ITEM
+  erase_sprite(self.player_id, self.draw.shop_item)
+  -- HARD DEHOOK: ensure default shop item can never remain visible
+  erase_sprite(self.player_id, self.draw.shop_item)
+
+  -- Ensure this asset is available
+  Net.provide_asset_for_player(self.player_id, art_path)
+
+  -- Allocate a UNIQUE sprite_id per art_path (prevents cached texture binding)
+  local sid = self._shop_art_sprite_by_path[art_path]
+  if not sid then
+    self._shop_art_sprite_seq = (self._shop_art_sprite_seq or 0) + 1
+    sid = (self.spr.SHOP_ART .. "_" .. tostring(self._shop_art_sprite_seq))
+    self._shop_art_sprite_by_path[art_path] = sid
+    Net.player_alloc_sprite(self.player_id, sid, { texture_path = art_path })
+  end
+
+
+  -- Use a UNIQUE draw_id per sprite_id (prevents cached draw_id->sprite binding)
+  local did = (self.draw.shop_art .. "_" .. sid)
+
+  -- If we were drawing different art last frame, erase its draw_id
+  if self._shop_art_active_draw_id and self._shop_art_active_draw_id ~= did then
+    erase_sprite(self.player_id, self._shop_art_active_draw_id)
+  end
+  self._shop_art_active_draw_id = did
+  self._shop_art_active_path = art_path
+
+  local sx = scale * (slot_w / art_w)
+  local sy = scale * (slot_h / art_h)
+  local dx = ix
+  local dy = iy
+
+  if self._shop_item_intro_active and slot_w > 0 then
+    local frames = tonumber(L.shop_item_intro_frames) or 10
+    local dur = frames / 60
+    local raw = math.min(1, (self._shop_item_intro_t or 0) / math.max(0.0001, dur))
+    local t = raw * raw * raw
+    local min_p = 0.05
+    local p = math.max(min_p, t)
+
+    local base_sx = sx
+    sx = sx * p
+    -- Center based on *actual drawn width* (art_w * sx), not slot_w * sx
+    local cx = ix + (art_w * base_sx) / 2
+    dx = cx - (art_w * sx) / 2
+
+  end
+
+  draw_sprite_xy(self, sid, did, dx, dy, (L.z + zadd), sx, sy)
+
+      else
+        -- show ITEM, hide ART
+        -- HARD DEHOOK: ensure any previously drawn custom art is gone
+        if self._shop_art_active_draw_id then
+          erase_sprite(self.player_id, self._shop_art_active_draw_id)
+          self._shop_art_active_draw_id = nil
+          self._shop_art_active_path = nil
+        end
+
+        local w = tonumber(L.shop_item_w) or 0
+        local sx = scale
+        local sy = scale
+        local dx = ix
+        local dy = iy
+
+        if self._shop_item_intro_active and w > 0 then
+          local frames = tonumber(L.shop_item_intro_frames) or 10
+          local dur = frames / 60
+          local raw = math.min(1, (self._shop_item_intro_t or 0) / math.max(0.0001, dur))
+          local t = raw * raw * raw
+          local min_p = 0.05
+          local p = math.max(min_p, t)
+
+          sx = scale * p
+          local cx = ix + (w * scale) / 2
+          dx = cx - (w * sx) / 2
+        end
+
+        draw_sprite_xy(self, self.spr.SHOP_ITEM, self.draw.shop_item, dx, dy, (L.z + zadd), sx, sy)
+      end
+    end
+  else
+    erase_sprite(self.player_id, self.draw.shop_item)
+    erase_sprite(self.player_id, self.draw.shop_exit)
+    erase_sprite(self.player_id, self.draw.shop_art)
+  end
 end
 
 
@@ -1058,7 +1372,8 @@ end
     or (self._text_cache_rows ~= rows)
     or (self._text_cache_total ~= total)
 
-  if redraw_text then
+
+  if redraw_text or self._hscroll.active then
     -- Keep a stable list of display IDs (one per visible row).
     -- This prevents flicker caused by erase/recreate cycles.
     if not self.menu_text_ids or #self.menu_text_ids ~= rows then
@@ -1085,12 +1400,64 @@ end
   local scale = tonumber(L.scale) or 2.0
   local row_h = (tonumber(L.row_height) or 12) * scale
 
-  -- Content top-left inside window
-  local cx = x0 + (L.padding_x or 0)
-  local cy = y0 + (L.padding_y or 0)
+-- In this project, padding values are already in screen pixels.
+local cx = x0 + (tonumber(L.padding_x) or 0)
+local cy = y0 + (tonumber(L.padding_y) or 0)
 
-  if redraw_text then
-    for i = 0, rows - 1 do
+-- Left edge of text area
+local clip_left = cx
+local gap = tonumber(L.text_clip_gap) or 8
+
+-- RIGHT edge of the *white list region*:
+-- In the shop skin, the right panel begins where the shop item card is drawn.
+-- That x is: x0 + (MENU_W*scale) - shop_item_pad_x
+local clip_right
+if L.shop_item_enabled and tonumber(L.shop_item_pad_x) then
+  local panel_left = x0 + (MENU_W * scale) - tonumber(L.shop_item_pad_x)
+  clip_right = panel_left - gap
+else
+  -- fallback: whole menu width
+  clip_right = x0 + (MENU_W * scale) - gap
+end
+
+local clip_width = math.max(0, clip_right - clip_left)
+
+    -- =====================================================
+    -- Horizontal scroll detection (ALWAYS runs)
+    -- =====================================================
+    do
+      local idx = self.selection_index
+      local opt = self.options[idx]
+      if opt then
+        local text = tostring(opt.text or "")
+        local scale = tonumber(self.layout.scale) or 2.0
+        local text_w = FontSystem:getTextWidth(text, self.layout.font, scale)
+
+        local key = tostring(self.selection_index) .. "|" .. text
+        if self._hscroll.key ~= key then
+          self._hscroll.key = key
+          self._hscroll.hold_t = 0
+          self._hscroll.delay = self._hscroll.delay_initial or self._hscroll.delay
+          self._hscroll.offset = 0
+          self._hscroll.loop_width = 0
+        end
+
+        self._hscroll.text_width = text_w
+        self._hscroll.overflow = (text_w > clip_width)
+
+        -- active will be decided in update() after delay is met
+        if not self._hscroll.overflow then
+          self._hscroll.active = false
+          self._hscroll.hold_t = 0
+          self._hscroll.offset = 0
+          self._hscroll.loop_width = 0
+        end
+
+      end
+    end
+
+    if redraw_text or self._hscroll.active then
+      for i = 0, rows - 1 do
       local idx = top + i
       local tx = cx
       local ty = cy + (i * row_h)
@@ -1098,7 +1465,39 @@ end
       local display_id = self.menu_text_ids[i + 1]
 
       if idx <= total then
-        local text = tostring(self.options[idx].text or "")
+        local full_text = tostring(self.options[idx].text or "")
+
+        local is_selected = (idx == sel)
+        local text_w = FontSystem:getTextWidth(full_text, L.font, scale)
+        local overflow = (text_w > clip_width)
+
+        local text = full_text
+
+            if overflow then
+              if is_selected then
+                if self._hscroll.active then
+                  local gap_px = (self._hscroll.gap or 24)
+                  local window, loop_w = marquee_window(
+                    full_text, L.font, scale, clip_width, self._hscroll.offset, gap_px
+                  )
+                  text = window
+                  self._hscroll.loop_width = loop_w
+                    else
+                      if self.state ~= STATE.MENU then
+                        text = ellipsis_clip(full_text, L.font, scale, clip_width)
+                      else
+                        local gap_px = (self._hscroll.gap or 24)
+                        local window, loop_w = marquee_window(full_text, L.font, scale, clip_width, 0, gap_px)
+                        text = window
+                        self._hscroll.loop_width = loop_w
+                      end
+                    end
+
+
+              else
+                text = ellipsis_clip(full_text, L.font, scale, clip_width)
+              end
+            end
 
         -- Intro animation: per-row fade + slight slide from the right
         local opacity = 255
@@ -1131,7 +1530,7 @@ end
         FontSystem:drawTextWithId(
           self.player_id,
           text,
-          tx + xoff,
+          (clip_left + xoff),
           ty,
           L.font,
           scale,
@@ -1144,7 +1543,6 @@ end
       else
         -- If fewer items than rows, erase the unused row display
         FontSystem:eraseTextDisplay(self.player_id, display_id)
-        self.menu_row_last_len[i + 1] = 0
       end
     end
   end
@@ -1270,6 +1668,16 @@ function PromptMenuInstance:become_ready()
   -- Reset bob so it doesn't start mid-wave
   self.cursor_phase = 0
 
+  -- Reset marquee timing so delay starts when the cursor becomes visible
+  if self._hscroll then
+    self._hscroll.active = false
+    self._hscroll.hold_t = 0
+    self._hscroll.offset = 0
+    self._hscroll.loop_width = 0
+    self._hscroll.key = nil
+  end
+
+
   -- Goal_1_5: only draw contents once the menu window is actually ready.
   -- If we render too early (menu_bg_needs_open still true), render_menu_contents()
   -- hard-gates and never sets cursor_base_x/y, so the cursor won't appear until you move.
@@ -1285,7 +1693,7 @@ function PromptMenuInstance:become_ready()
     self:update_scroll_for_selection(true)
 
     -- Only redraw overlays; avoid forcing a full text redraw
-    self:render_menu_contents(false)
+    self:render_menu_contents(true)
   end
 
 
@@ -1341,6 +1749,7 @@ function PromptMenuInstance:do_cancel()
   -- Default: jump_to_exit
   if self.selection_index ~= self.exit_index then
     self.selection_index = self.exit_index
+    self._hscroll.offset = 0
     self:restart_shop_item_intro()
     local sc_changed = self:update_scroll_for_selection(false)
     play_cursor_move_sfx(self.player_id)
@@ -1364,6 +1773,51 @@ end
 function PromptMenuInstance:update(_dt)
   -- clamp dt to reduce visible stutter from occasional frame-time spikes
   local dt = math.min(_dt or 0, 1/30)
+  -- Horizontal scrolling for selected menu option (delay + pause on wrap)
+  -- IMPORTANT: Never return out of update() from here. This is just animation.
+  if self._hscroll then
+    local highlight_visible = (self.state == STATE.MENU) and self:highlight_visible()
+    local can_scroll = highlight_visible and (self._hscroll.overflow == true)
+
+    if not can_scroll then
+      self._hscroll.active = false
+      self._hscroll.hold_t = 0
+      self._hscroll.offset = 0
+      -- no return: let the rest of update() run
+    else
+      -- Build delay time
+      self._hscroll.hold_t = (self._hscroll.hold_t or 0) + dt
+
+      if self._hscroll.hold_t < (self._hscroll.delay or 1.0) then
+        self._hscroll.active = false
+      else
+        -- Ensure loop width exists (render pass will compute it)
+        local loop_w = tonumber(self._hscroll.loop_width) or 0
+        if loop_w <= 0 then
+          self._hscroll.active = true
+          self._hscroll.offset = 0
+          self:render_menu_contents(true)
+        else
+          -- Advance offset
+          self._hscroll.active = true
+          local prev = self._hscroll.offset or 0
+          local next_off = prev + ((self._hscroll.speed or 86) * dt)
+
+          -- Pause again whenever we wrap back to the beginning
+          if next_off >= loop_w then
+            self._hscroll.offset = 0
+            self._hscroll.active = false
+            self._hscroll.delay = self._hscroll.delay_loop or self._hscroll.delay
+            self._hscroll.hold_t = 0
+          else
+            self._hscroll.offset = next_off
+          end
+
+          self:render_menu_contents(true)
+        end
+      end
+    end
+  end
 
   local player_id = self.player_id
   local st = Displayer.Text.getTextBoxState(player_id, self.box_id)
@@ -1607,6 +2061,7 @@ function PromptMenuInstance:update(_dt)
         self.selection_index = self.selection_index - 1
       end
           if self.selection_index ~= prev then
+            self._hscroll.offset = 0
             self:restart_shop_item_intro()
             local sc_changed = self:update_scroll_for_selection(false)
             play_cursor_move_sfx(player_id)
@@ -1627,12 +2082,42 @@ function PromptMenuInstance:update(_dt)
       end
         if self.selection_index ~= prev then
           self:restart_shop_item_intro()
+          self._hscroll.offset = 0
           local sc_changed = self:update_scroll_for_selection(false)
           play_cursor_move_sfx(player_id)
           self:render_menu_contents(sc_changed)
         end
       return
 
+    end
+
+    -- Paging: RIGHT = page down, LEFT = page up
+    do
+      local rows = tonumber(self.layout.visible_rows) or 5
+      local page = math.max(1, rows)
+
+      -- Treat Exit as non-pageable target (page within real items)
+      local last_item = math.max(1, (self.exit_index or #self.options) - 1)
+
+      if Input.pop(player_id, "right") then
+        local cur = self.selection_index
+        local target = math.min(cur + page, last_item)
+
+        if target ~= cur then
+          self:page_jump_to(target)
+        end
+        return
+      end
+
+      if Input.pop(player_id, "left") then
+        local cur = self.selection_index
+        local target = math.max(cur - page, 1)
+
+        if target ~= cur then
+          self:page_jump_to(target)
+        end
+        return
+      end
     end
 
 
@@ -1682,6 +2167,8 @@ function PromptVertical._finalize_close(player_id, _reason, opts)
   erase_sprite(player_id, inst.draw.cursor)
   erase_sprite(player_id, inst.draw.scroll)
   erase_sprite(player_id, inst.draw.shop_item)
+  erase_sprite(player_id, inst.draw.shop_exit)
+  erase_sprite(player_id, inst.draw.shop_art)
 
   -- Erase menu text
   inst:clear_menu_text()

@@ -222,7 +222,9 @@ local function ensure_tick()
         Input.clear_require_release(player_id, { "confirm", "cancel" })
         Input.swallow(player_id, 0.10)
       end
-    end    --=====================================================
+    end
+
+    --=====================================================
     -- Deferred CONFIRM yes/no (open on next tick)
     --=====================================================
     for player_id, c in pairs(confirm_pending) do
@@ -247,10 +249,57 @@ local function ensure_tick()
           question = string.format(qfmt, choice_text),
 
           on_yes = function()
-            play_sfx(player_id, flow.sfx.confirm)
+            -- confirm sfx can be vetoed by on_select (e.g. not enough money)
+            local suppress_confirm_sfx = false
+
             -- This runs the same path as "no-confirm" selections
+            local post_text_override = nil
+            local suppress_post = false
+            local after_branch = "yes"
+
+
+            if type(c.on_select) == "function" then
+              local ok, res = pcall(c.on_select, {
+                player_id = player_id,
+                choice_id = choice_id,
+                choice_text = choice_text,
+                choice = c.choice,
+                index = c.index,
+                menu = menu,
+                ui = ui,
+                box_id = box_id,
+                layout = c.layout,
+                flow = flow,
+              })
+
+              if ok then
+                if type(res) == "string" then
+                  post_text_override = res
+                elseif type(res) == "table" then
+                  if res.post_text ~= nil then post_text_override = tostring(res.post_text) end
+                  if res.suppress_post_select == true then suppress_post = true end
+                  if res.suppress_confirm_sfx == true then suppress_confirm_sfx = true end
+                  if res.after_branch ~= nil then after_branch = tostring(res.after_branch) end
+
+                end
+              else
+                post_text_override = "Shop error."
+              end
+            end
+
+            -- Only play confirm sfx if the selection didn't veto it
+            if not suppress_confirm_sfx then
+              play_sfx(player_id, flow.sfx.confirm)
+            end
+
+            if suppress_post then
+              set_menu_locked(menu, false)
+              return
+            end
+
             local fmt = flow.post_select.text_format or 'You got "%s".'
-            reset_box_text(player_id, box_id, ui, string.format(fmt, choice_text), true)
+            local post_text = post_text_override or string.format(fmt, choice_text)
+            reset_box_text(player_id, box_id, ui, post_text, true)
 
             pending_ack[player_id] = {
               box_id = box_id,
@@ -260,6 +309,8 @@ local function ensure_tick()
               choice_id = choice_id,
               choice_text = choice_text,
               flow = flow,
+              after_branch = after_branch,
+
             }
           end,
 
@@ -300,9 +351,8 @@ local function ensure_tick()
       end
     end
 
-
     --=====================================================
-    -- Pending ACK phases (post-select / after-text / exit close) (post-select / after-text / exit close)
+    -- Pending ACK phases (post-select / after-text / exit close)
     --=====================================================
     for player_id, p in pairs(pending_ack) do
       local st = Displayer.Text.getTextBoxState(player_id, p.box_id)
@@ -355,15 +405,16 @@ local function ensure_tick()
             end
 
             -- Phase 1 confirm -> show after_text (NO indicator) then auto-return
-            reset_box_text(
-              player_id,
-              p.box_id,
-              p.ui,
-              (p.flow.after_yes_text or p.flow.after_text or "Thank you!{p_1} Is there anything else you'd like?"),
+            local after_text
+            if p.after_branch == "no" then
+              after_text = (p.flow.after_no_text or p.flow.after_text or "Is there anything else you'd like?")
+            else
+              after_text = (p.flow.after_yes_text or p.flow.after_text or "Thank you!{p_1} Is there anything else you'd like?")
+            end
 
-              false
-            )
+            reset_box_text(player_id, p.box_id, p.ui, after_text, false)
             p.phase = 2
+
           end
         end
       end
@@ -449,7 +500,6 @@ function TalkVertMenu.open(player_id, bot_name, talk_cfg, menu_cfg)
 
     assets = menu_cfg.assets,
 
-
     question = tostring(menu_cfg.intro_text or "Choose:"),
     options = menu_cfg.options or { { id = exit_id, text = "Exit" } },
     default_index = tonumber(menu_cfg.default_index or 1) or 1,
@@ -479,6 +529,13 @@ function TalkVertMenu.open(player_id, bot_name, talk_cfg, menu_cfg)
       if choice_id == exit_id then
         play_sfx(player_id, flow.sfx.close)
 
+        -- Lock player input immediately to avoid re-entrant interactions
+        if Net.lock_player_input then
+          pcall(function() Net.lock_player_input(player_id) end)
+        end
+
+        set_menu_locked(menu, true)
+
         exit_pending[player_id] = {
           box_id = box_id,
           ui = ui,
@@ -506,8 +563,42 @@ function TalkVertMenu.open(player_id, bot_name, talk_cfg, menu_cfg)
           return
         end
 
+        local post_text_override = nil
+        local suppress_post = false
+        if type(menu_cfg.on_select) == "function" then
+          local ok, res = pcall(menu_cfg.on_select, {
+            player_id = player_id,
+            choice_id = choice_id,
+            choice_text = choice_text,
+            choice = choice,
+            index = index,
+            menu = menu,
+            ui = ui,
+            box_id = box_id,
+            layout = layout,
+            flow = flow,
+            bot_name = bot_name,
+          })
+          if ok then
+            if type(res) == "string" then
+              post_text_override = res
+            elseif type(res) == "table" then
+              if res.post_text ~= nil then post_text_override = tostring(res.post_text) end
+              if res.suppress_post_select == true then suppress_post = true end
+            end
+          else
+            post_text_override = "Shop error."
+          end
+        end
+
+        if suppress_post then
+          set_menu_locked(menu, false)
+          return
+        end
+
         local fmt = flow.post_select.text_format or 'You got "%s".'
-        reset_box_text(player_id, box_id, ui, string.format(fmt, choice_text), true)
+        local post_text = post_text_override or string.format(fmt, choice_text)
+        reset_box_text(player_id, box_id, ui, post_text, true)
 
         pending_ack[player_id] = {
           box_id = box_id,
@@ -529,19 +620,21 @@ function TalkVertMenu.open(player_id, bot_name, talk_cfg, menu_cfg)
         return
       end
 
-      local qfmt = flow.confirm.text_format or 'Are you sure you want "%s"?'
-
       -- Defer opening YES/NO confirm by 1 tick to avoid textbox clear/position race.
       confirm_pending[player_id] = {
         box_id = box_id,
         ui = ui,
         menu = menu,
         flow = flow,
+        layout = layout,
+        on_select = menu_cfg.on_select,
+        choice = choice,
+        index = index,
         choice_id = choice_id,
         choice_text = choice_text,
       }
       return
-end,
+    end,
   })
 end
 
