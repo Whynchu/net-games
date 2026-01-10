@@ -519,8 +519,6 @@ function PromptMenuInstance:new(player_id, opts)
 
   o._sprites_allocated = false
 
-
-
   o.question = tostring(opts.question or "Choose:")
   o.options  = opts.options or { { text = "Exit" } }
 
@@ -594,6 +592,34 @@ function PromptMenuInstance:new(player_id, opts)
   o._shop_art_sprite_seq = 0        -- monotonic id counter (DO NOT use #table)
   o._shop_art_active_draw_id = nil  -- currently drawn art draw_id
   o._shop_art_active_path = nil     -- currently drawn art path
+
+  -- Preload + pre-allocate all shop ART textures up front.
+  -- This prevents async asset arrival from briefly showing the "wrong" previous texture.
+  do
+    local L = o.layout
+    if L and L.shop_item_enabled and type(o.options) == "table" then
+      local seen = {}
+      for i = 1, #o.options do
+        local v = o.options[i]
+        local path = v and (v.image or v.img or v.icon)
+        if type(path) == "string" and path ~= "" and not seen[path] then
+          seen[path] = true
+
+          -- Ensure texture is sent to the client early
+          Net.provide_asset_for_player(o.player_id, path)
+
+          -- Allocate ONE sprite_id per path for the lifetime of this menu instance
+          o._shop_art_sprite_seq = o._shop_art_sprite_seq + 1
+          local sid = o.spr.SHOP_ART .. "_pre_" .. tostring(o._shop_art_sprite_seq)
+
+          Net.player_alloc_sprite(o.player_id, sid, { texture_path = path })
+          o._shop_art_sprite_by_path[path] = sid
+        end
+      end
+    end
+  end
+
+
 
   -- Stable text display IDs (one per visible row) to prevent flicker.
   -- We reuse these IDs and redraw in-place instead of erasing/recreating every move.
@@ -788,7 +814,13 @@ function PromptMenuInstance:start_close(reason, keep_textbox)
 
   erase_sprite(self.player_id, self.draw.shop_item)
   erase_sprite(self.player_id, self.draw.shop_exit)
-  erase_sprite(self.player_id, self.draw.shop_art)
+  -- shop art uses a dynamic draw_id; erase the active one
+  if self._shop_art_active_draw_id then
+    erase_sprite(self.player_id, self._shop_art_active_draw_id)
+    self._shop_art_active_draw_id = nil
+    self._shop_art_active_path = nil
+  end
+
 
 
 
@@ -1274,18 +1306,18 @@ if has_art then
   -- HARD DEHOOK: ensure default shop item can never remain visible
   erase_sprite(self.player_id, self.draw.shop_item)
 
-  -- Ensure this asset is available
+  -- Ensure this asset is available (safe even if already provided)
   Net.provide_asset_for_player(self.player_id, art_path)
 
-  -- Allocate a UNIQUE sprite_id per art_path (prevents cached texture binding)
+  -- Use stable sprite_id per art_path (allocated in new(); fallback allocate if missing)
   local sid = self._shop_art_sprite_by_path[art_path]
   if not sid then
     self._shop_art_sprite_seq = (self._shop_art_sprite_seq or 0) + 1
-    sid = (self.spr.SHOP_ART .. "_" .. tostring(self._shop_art_sprite_seq))
-    self._shop_art_sprite_by_path[art_path] = sid
-    Net.player_alloc_sprite(self.player_id, sid, { texture_path = art_path })
-  end
+    sid = self.spr.SHOP_ART .. "_dyn_" .. tostring(self._shop_art_sprite_seq)
 
+    Net.player_alloc_sprite(self.player_id, sid, { texture_path = art_path })
+    self._shop_art_sprite_by_path[art_path] = sid
+  end
 
   -- Use a UNIQUE draw_id per sprite_id (prevents cached draw_id->sprite binding)
   local did = (self.draw.shop_art .. "_" .. sid)
@@ -1354,7 +1386,11 @@ if has_art then
   else
     erase_sprite(self.player_id, self.draw.shop_item)
     erase_sprite(self.player_id, self.draw.shop_exit)
-    erase_sprite(self.player_id, self.draw.shop_art)
+    if self._shop_art_active_draw_id then
+      erase_sprite(self.player_id, self._shop_art_active_draw_id)
+      self._shop_art_active_draw_id = nil
+      self._shop_art_active_path = nil
+    end
   end
 end
 
@@ -2170,7 +2206,11 @@ function PromptVertical._finalize_close(player_id, _reason, opts)
   erase_sprite(player_id, inst.draw.scroll)
   erase_sprite(player_id, inst.draw.shop_item)
   erase_sprite(player_id, inst.draw.shop_exit)
-  erase_sprite(player_id, inst.draw.shop_art)
+  if inst._shop_art_active_draw_id then
+    erase_sprite(player_id, inst._shop_art_active_draw_id)
+    inst._shop_art_active_draw_id = nil
+    inst._shop_art_active_path = nil
+  end
 
   -- Erase menu text
   inst:clear_menu_text()
