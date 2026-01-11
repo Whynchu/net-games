@@ -19,10 +19,10 @@ end
 local function build_bank_options()
   -- IDs will be 1..99 (numeric), text shows actual deposit amount.
   local opts = {}
-  for i = 1, 99 do
+  for i = 1, 999 do
     opts[#opts + 1] = {
       id = i,
-      text = ("Withdrawal %d$"):format(i * 10000000),
+      text = ("Withdrawal %d$"):format(i * 100),
     }
   end
   opts[#opts + 1] = { id = "exit", text = "Exit" }
@@ -96,7 +96,7 @@ Talk.npc({
           return { post_text = "That option is busted." }
         end
 
-        local add_amount = n * 10000000
+        local add_amount = n * 100
 
         local cur, err = get_money(ctx.player_id)
         if cur == nil then

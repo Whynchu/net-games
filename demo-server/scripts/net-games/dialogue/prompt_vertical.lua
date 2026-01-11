@@ -161,35 +161,45 @@ local function marquee_window(text, font, scale, clip_px, start_px, gap_px)
 end
 
 -- Clip text to a pixel width; if clipped, append "..."
-local function ellipsis_clip(text, font, scale, clip_px)
+-- If force_ellipsis is true, always return a "..."" result (even if the full text would fit).
+local function ellipsis_clip(text, font, scale, clip_px, force_ellipsis)
   if clip_px <= 0 then return "" end
   if text == "" then return "" end
-
-  local full_w = FontSystem:getTextWidth(text, font, scale)
-  if full_w <= clip_px then
-    return text
-  end
 
   local dots = "..."
   local dots_w = FontSystem:getTextWidth(dots, font, scale)
   if dots_w >= clip_px then
-    return dots  -- nothing else fits
+    return dots
   end
 
-  local out = {}
-  local used = 0
-  for i = 1, #text do
-    local ch = text:sub(i, i)
-    local cw = char_w(font, scale, ch)
-    if (used + cw + dots_w) > clip_px then
-      break
+  -- If we're NOT forcing, allow early return when it fits.
+  if not force_ellipsis then
+    if FontSystem:getTextWidth(text, font, scale) <= clip_px then
+      return text
     end
-    out[#out + 1] = ch
-    used = used + cw
   end
 
-  return table.concat(out) .. dots
+  -- Find the longest prefix such that (prefix .. "...") fits.
+  local lo, hi = 0, #text
+  local best = 0
+
+  while lo <= hi do
+    local mid = math.floor((lo + hi) / 2)
+    local candidate = text:sub(1, mid) .. dots
+    local w = FontSystem:getTextWidth(candidate, font, scale)
+
+    if w <= clip_px then
+      best = mid
+      lo = mid + 1
+    else
+      hi = mid - 1
+    end
+  end
+
+  return text:sub(1, best) .. dots
 end
+
+
 
 
 local function ensure_tick()
@@ -466,6 +476,12 @@ local function normalize_layout(layout)
 
     -- Text clip tuning (screen pixels)
     text_clip_gap = tonumber(layout.text_clip_gap or 8) or 8,
+    text_clip_bonus_px = tonumber(layout.text_clip_bonus_px or 0) or 0,
+    text_clip_selected_bonus_px = tonumber(layout.text_clip_selected_bonus_px or 0) or 0,
+    -- NEW: fine-tune overflow rendering by whole character widths
+    -- (positive values)
+    text_clip_ellipsis_char_bonus = tonumber(layout.text_clip_ellipsis_char_bonus or 0) or 0,
+    text_clip_marquee_char_cut    = tonumber(layout.text_clip_marquee_char_cut or 0) or 0,
 
     text_scroll_delay = tonumber(layout.text_scroll_delay or 1.0) or 1.0,
 
@@ -1449,14 +1465,19 @@ local gap = tonumber(L.text_clip_gap) or 8
 -- That x is: x0 + (MENU_W*scale) - shop_item_pad_x
 local clip_right
 if L.shop_item_enabled and tonumber(L.shop_item_pad_x) then
-  local panel_left = x0 + (MENU_W * scale) - tonumber(L.shop_item_pad_x)
-  clip_right = panel_left - gap
+-- panel_left must match how the shop card is positioned (ix)
+local panel_left = x0 + (MENU_W * scale) - (tonumber(L.shop_item_pad_x) or 0)
+clip_right = panel_left - gap
+
 else
   -- fallback: whole menu width
   clip_right = x0 + (MENU_W * scale) - gap
 end
 
 local clip_width = math.max(0, clip_right - clip_left)
+
+-- Extra reclaimable space for shop lists (does not affect cursor/padding art)
+clip_width = clip_width + (tonumber(L.text_clip_bonus_px) or 0)
 
     -- =====================================================
     -- Horizontal scroll detection (ALWAYS runs)
@@ -1479,7 +1500,12 @@ local clip_width = math.max(0, clip_right - clip_left)
         end
 
         self._hscroll.text_width = text_w
-        self._hscroll.overflow = (text_w > clip_width)
+
+        -- IMPORTANT: overflow detection must match the selected-row clip rules,
+        -- otherwise selected_bonus has zero visible effect.
+        local bleed_px = 2
+        local detect_clip = clip_width - bleed_px
+        self._hscroll.overflow = (text_w > detect_clip)
 
         -- active will be decided in update() after delay is met
         if not self._hscroll.overflow then
@@ -1505,35 +1531,63 @@ local clip_width = math.max(0, clip_right - clip_left)
 
         local is_selected = (idx == sel)
         local text_w = FontSystem:getTextWidth(full_text, L.font, scale)
-        local overflow = (text_w > clip_width)
+
+        -- Safety margin to prevent right-edge bleed (marquee is the touchiest case)
+        local bleed_margin = 0
+        if is_selected then
+          bleed_margin = tonumber(L.text_clip_selected_bleed_px) or 2
+        end
+
+        -- Selected-only extra room (lets you get 1 more character without changing layout)
+        local selected_bonus = 0
+        if is_selected then
+          selected_bonus = tonumber(L.text_clip_selected_bonus_px) or 0
+        end
+
+        local base_clip = clip_width + selected_bonus
+        local effective_clip = base_clip
+
+        -- If we're within 1px of the edge, treat it as overflow so we don't bleed.
+        local overflow = (text_w >= (base_clip - 1))
+
+        if overflow then
+          effective_clip = math.max(0, base_clip - bleed_margin)
+        end
+
+        -- Separate clip widths for ellipsis vs marquee
+        local glyph_px = char_w(L.font, scale, "0") -- one “char” in px at this font/scale
+        local ellipsis_clip_px =
+          effective_clip + (math.max(0, tonumber(L.text_clip_ellipsis_char_bonus) or 0) * glyph_px)
+        local marquee_clip_px =
+          math.max(0, effective_clip - (math.max(0, tonumber(L.text_clip_marquee_char_cut) or 0) * glyph_px))
 
         local text = full_text
 
-            if overflow then
-              if is_selected then
-                if self._hscroll.active then
-                  local gap_px = (self._hscroll.gap or 24)
-                  local window, loop_w = marquee_window(
-                    full_text, L.font, scale, clip_width, self._hscroll.offset, gap_px
-                  )
-                  text = window
-                  self._hscroll.loop_width = loop_w
-                    else
-                      if self.state ~= STATE.MENU then
-                        text = ellipsis_clip(full_text, L.font, scale, clip_width)
-                      else
-                        local gap_px = (self._hscroll.gap or 24)
-                        local window, loop_w = marquee_window(full_text, L.font, scale, clip_width, 0, gap_px)
-                        text = window
-                        self._hscroll.loop_width = loop_w
-                      end
-                    end
-
-
+        if overflow then
+          if is_selected then
+            if self._hscroll.active then
+              local gap_px = (self._hscroll.gap or 24)
+              local window, loop_w = marquee_window(
+                full_text, L.font, scale, marquee_clip_px, self._hscroll.offset, gap_px
+              )
+              text = window
+              self._hscroll.loop_width = loop_w
+            else
+              if self.state ~= STATE.MENU then
+                text = ellipsis_clip(full_text, L.font, scale, ellipsis_clip_px, true)
               else
-                text = ellipsis_clip(full_text, L.font, scale, clip_width)
+                local gap_px = (self._hscroll.gap or 24)
+                local window, loop_w = marquee_window(
+                  full_text, L.font, scale, marquee_clip_px, 0, gap_px
+                )
+                text = window
+                self._hscroll.loop_width = loop_w
               end
             end
+          else
+            text = ellipsis_clip(full_text, L.font, scale, ellipsis_clip_px, true)
+          end
+        end
 
         -- Intro animation: per-row fade + slight slide from the right
         local opacity = 255

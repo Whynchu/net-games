@@ -10,7 +10,7 @@ local Presets = require("scripts/net-games/npcs/talk_presets")
 
 local Econ = require("scripts/net-games/compat/econ")
 
-local PRICE_PER = 125000
+local PRICE_PER = 250
 local ERROR_SFX_PATH = "/server/assets/net-games/sfx/card_error.ogg"
 
 -- Terminal-only debug toggle
@@ -84,10 +84,10 @@ end
 
 local function build_hpmem_options()
   local opts = {}
-  for i = 1, 14 do
+  for i = 1, 999 do
     local opt = {
       id = ("HPMEM_%d"):format(i),
-      text = ("HPMemory%-2d %d$"):format(i, PRICE_PER * i),
+      text = ("HPMEM%-2d %d$"):format(i, PRICE_PER * i),
     }
 
     if i == 14 then

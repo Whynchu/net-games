@@ -205,6 +205,12 @@ P.vert_menus = {
     padding_x = 48,
     padding_y = 4,
 
+    text_clip_bonus_px = 20,
+    text_clip_selected_bonus_px = 0,
+    text_clip_selected_bleed_px = 1,
+    text_clip_ellipsis_char_bonus = 1, -- show 1 more char before "..."
+    text_clip_marquee_char_cut    = 1, -- show 1 fewer char while scrolling (prevents bleed)
+
     text_intro_enabled = true,
     text_intro_frames = 16,
     text_intro_stagger_frames = 8,
@@ -259,8 +265,6 @@ P.vert_menus = {
 
     text_clip_gap = 60,  -- try 60-80
     text_scroll_delay = 0.24,  -- 0.2–0.5 sec feels good
-
-
   },
 }
 
