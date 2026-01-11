@@ -8,7 +8,7 @@ local Displayer  = require("scripts/net-games/displayer/displayer")
 local Input      = require("scripts/net-games/input/input")
 local FontSystem = require("scripts/net-games/displayer/font-system")
 
-local MENUDBG = true
+local MENUDBG = false
 local function mdbg(pid, msg)
   if not MENUDBG then return end
   print(string.format("[MENUDBG t=%.3f p=%s] %s", os.clock(), tostring(pid), tostring(msg)))

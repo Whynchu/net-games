@@ -308,12 +308,16 @@ function Input.debug_dump_last_packet(player_id)
 end
 
 function Input.attach_virtual_input_listener(bindings)
-  if LISTENER_ATTACHED then
-    print("[Input] listener already attached")
-    return
-  end
-  LISTENER_ATTACHED = true
-  print("[Input] attaching Net:on('virtual_input') listener")
+    if LISTENER_ATTACHED then
+      if Input.DEBUG then
+        print("[Input] listener already attached")
+      end
+      return
+    end
+    LISTENER_ATTACHED = true
+    if Input.DEBUG then
+      print("[Input] attaching Net:on('virtual_input') listener")
+    end
 
   bindings = bindings or DEFAULT_BINDINGS
 

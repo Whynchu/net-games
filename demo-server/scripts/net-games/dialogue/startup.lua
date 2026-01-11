@@ -1,5 +1,4 @@
 -- server/scripts/net-games/dialogue/startup.lua
-print("[net-games dialogue/startup] LOADING...")
 -- =====================================================
 -- Textbox debug master switch
 -- =====================================================
@@ -19,6 +18,4 @@ td.backdrop_sprite = td.backdrop_sprite or {}
 td.backdrop_sprite.texture_path = "/server/assets/net-games/displayer/marquee-backdrop.png"
 td.backdrop_sprite.anim_path    = nil
 td.backdrop_sprite.sprite_id    = 9001
-
-print("[net-games dialogue/startup] READY")
 return true
