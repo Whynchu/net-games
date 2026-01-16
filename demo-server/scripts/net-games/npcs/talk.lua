@@ -7,6 +7,7 @@ local Direction = require("scripts/libs/direction")
 local Dialogue  = require("scripts/net-games/dialogue/dialogue")
 local Presets   = require("scripts/net-games/npcs/talk_presets")
 local MenuOptions  = require("scripts/net-games/npcs/menu_options")
+local Econ = require("scripts/net-games/compat/econ")
 
 local Talk = {}
 
@@ -402,6 +403,8 @@ function Talk.vert_menu(player_id, bot_name, cfg, menu_cfg)
     flow.exit_goodbye_text = texts.exit_goodbye
   end
 
+local pack = get_pack_from_cfg(cfg)
+
 local function open_menu()
   TalkVertMenu.open(player_id, bot_name or (cfg.name or ""), cfg, {
     intro_text = open_yes_text or "...",
@@ -413,7 +416,7 @@ local function open_menu()
     layout = layout,
     flow = flow,
 
-    assets = menu_cfg.assets,
+    assets = menu_cfg.assets or pack.vert_menu_assets,
     on_select = menu_cfg.on_select,
   })
 end
@@ -473,6 +476,159 @@ end
     end,
   })
 
+end
+
+-- Talk.shop_menu(player_id, bot_name, cfg, shop_cfg)
+-- High-level shop wrapper built on Talk.vert_menu.
+-- Supports (for now):
+--   shop_cfg.catalog.kind = "bulk_qty"
+--   shop_cfg.grant = { kind="hp_mem" }
+function Talk.shop_menu(player_id, bot_name, cfg, shop_cfg)
+  cfg = cfg or {}
+  shop_cfg = shop_cfg or {}
+
+  -- Default to the shop pack if the caller didn't specify one.
+  cfg.preset = cfg.preset or cfg.pack or "prog_shop"
+
+  local texts   = shop_cfg.texts or {}
+  local catalog = shop_cfg.catalog or {}
+
+  if tostring(catalog.kind or "bulk_qty") ~= "bulk_qty" then
+    error("[Talk.shop_menu] Only catalog.kind='bulk_qty' is supported right now.")
+  end
+
+  local label   = tostring(catalog.label or "ITEM")
+  local max_qty = math.max(1, math.floor(tonumber(catalog.max_qty or 1) or 1))
+
+  local price_per = math.max(0, math.floor(tonumber(catalog.price_per or 0) or 0))
+  local exit_text = tostring(catalog.exit_text or "Exit")
+  local art       = (type(catalog.art) == "table") and catalog.art or nil
+
+  local function format_row(qty, cost)
+    local qty_s = tostring(qty)
+    if qty < 10 then qty_s = qty_s .. " " end -- spacing so 1..9 don't look glued
+    return label .. qty_s .. " " .. tostring(cost) .. "$"
+  end
+
+  -- Build PromptVertical options (with optional per-row art).
+  local options = {}
+  for qty = 1, max_qty do
+    local cost = qty * price_per
+    local o = { id = qty, text = format_row(qty, cost) }
+
+    if art and art[qty] then
+      local a = art[qty]
+      if type(a) == "string" then
+        o.image = a
+      elseif type(a) == "table" then
+        o.image   = a.path or a.image
+        o.image_w = a.w or a.image_w
+        o.image_h = a.h or a.image_h
+      end
+    end
+
+    options[#options + 1] = o
+  end
+  options[#options + 1] = { id = "exit", text = exit_text }
+
+  -- Resolve menu layout from pack, then inject current money into the label.
+  local layout = resolve_layout(cfg, {}) or {}
+  if layout and layout.monies_amount_enabled then
+    layout.monies_amount_text = tostring(Econ.get_money(player_id) or 0) .. "$"
+  end
+
+  local cant_afford_text =
+    texts.cant_afford or
+    "Sorry pal,{p_0.5} you don't have enough monies!"
+
+  local spend_failed_text =
+    texts.spend_failed or
+    "Woah— your monies changed.{p_0.5} Try again!"
+
+  local function play_error_sfx(ctx)
+    local path = ctx and ctx.flow and ctx.flow.sfx and (ctx.flow.sfx.close or ctx.flow.sfx.desc)
+    if not path then return end
+    Net.provide_asset_for_player(player_id, path)
+    if Net.play_sound_for_player then
+      pcall(function() Net.play_sound_for_player(player_id, path) end)
+    elseif Net.play_sound then
+      pcall(function() Net.play_sound(path) end)
+    end
+  end
+
+  local grant      = shop_cfg.grant or { kind = "hp_mem" }
+  local grant_kind = (type(grant) == "table" and tostring(grant.kind or "hp_mem")) or "hp_mem"
+
+  local function do_grant(qty)
+    if grant_kind == "hp_mem" then
+      if Econ.add_hp_mem then
+        Econ.add_hp_mem(player_id, qty)
+      end
+      return true
+    end
+    print("[Talk.shop_menu] Unknown grant.kind '" .. tostring(grant_kind) .. "'. No grant applied.")
+    return false
+  end
+
+  Talk.vert_menu(player_id, bot_name, cfg, {
+    layout = layout,
+    options = options,
+    texts = texts,
+    open_question = texts.open_question,
+    intro_text = texts.intro_text,
+
+    on_select = function(ctx)
+      local qty = tonumber(ctx.choice_id)
+      if not qty then return nil end
+
+      local cost = qty * price_per
+
+      -- Guard: can't afford
+      if (Econ.get_money(player_id) or 0) < cost then
+        play_error_sfx(ctx)
+        return {
+          post_text = cant_afford_text,
+          suppress_confirm_sfx = true,
+          after_branch = "no",
+        }
+      end
+
+      -- Spend
+      local ok = Econ.try_spend_money and Econ.try_spend_money(player_id, cost)
+      if not ok then
+        play_error_sfx(ctx)
+        return {
+          post_text = spend_failed_text,
+          suppress_confirm_sfx = true,
+          after_branch = "no",
+        }
+      end
+
+      -- Grant
+      do_grant(qty)
+
+    -- Refresh monies label immediately (match prog_shop3 behavior)
+    if ctx.menu and ctx.menu.layout then
+      ctx.menu.layout.monies_amount_text = tostring(Econ.get_money(player_id) or 0) .. "$"
+      if ctx.menu.render_menu_contents then
+        ctx.menu:render_menu_contents(true)
+      else
+        ctx.menu.menu_contents_pending = true
+      end
+    end
+
+
+      local item_name = (grant_kind == "hp_mem") and "HPMem" or label
+      local bought_text =
+        (texts.bought_format and string.format(texts.bought_format, qty, item_name))
+        or ("Bought " .. tostring(qty) .. "x " .. tostring(item_name) .. "!")
+
+      return {
+        post_text = bought_text,
+        after_branch = "yes",
+      }
+    end,
+  })
 end
 
 

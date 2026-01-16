@@ -323,7 +323,6 @@ P.packs = {
     vert_menu_layout = "prog_prompt",
     vert_menu_sfx_set = "card_desc",
     vert_menu_flow = "prog_prompt",
-
   },
 
   -- Same UI as prog (kept explicit so prompt can opt into it cleanly)
@@ -331,12 +330,29 @@ P.packs = {
     box = "panel",
     mug = "prog",
     nameplate = "prog",
-    -- Vertical menu defaults (non-content)
+
     vert_menu_layout = "prog_prompt",
     vert_menu_sfx_set = "card_desc",
     vert_menu_flow = "prog_prompt",
-
   },
+
+  prog_shop = {
+    box = "panel",
+    mug = "prog",
+    nameplate = "prog",
+
+    vert_menu_layout = "prog_prompt_shop",
+    vert_menu_sfx_set = "card_desc",
+    vert_menu_flow = "prog_prompt",
+
+    vert_menu_assets = {
+      menu_bg       = "/server/assets/net-games/ui/prompt_vert_menu_shop_an.png",
+      menu_bg_anim  = "/server/assets/net-games/ui/prompt_vert_menu_an.animation",
+      menu_bg_frame = "/server/assets/net-games/ui/prompt_vert_menu_shop_an_frame.png",
+      highlight     = "/server/assets/net-games/ui/highlight_shop.png",
+    },
+  }
+
 }
 
 return P
