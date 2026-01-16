@@ -25,22 +25,16 @@ Talk.npc({
   name    = "PROG SHOP 4",
 
   -- Overworld visuals (swap these to whatever you want)
-  texture_path   = "/server/assets/ow/prog/prog_ow_turquoise.png",
+  texture_path   = "/server/assets/ow/prog/prog_ow_purple.png",
   animation_path = "/server/assets/ow/prog/prog_ow.animation",
-
-  -- Talk skin (assumes we’ll add pack "prog_shop" in talk_presets.lua)
-  preset    = "prog_shop",
-  frame     = "turquoise",
-  mug       = "prog_turquoise",
-  nameplate = "prog",
 
   on_interact = function(player_id, _bot_id, bot_name)
     Talk.shop_menu(player_id, bot_name,
       -- Optional identity overrides (usually redundant with npc() fields)
       {
         preset    = "prog_shop",
-        frame     = "turquoise",
-        mug       = "prog_turquoise",
+        frame     = "purple",
+        mug       = "prog_purple",
         nameplate = "prog",
       },
       -- Shop config
