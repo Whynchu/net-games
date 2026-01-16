@@ -206,12 +206,20 @@ local function resolve_flow(cfg, menu_cfg)
     base = shallow_copy(v)
   end
 
+  -- IMPORTANT:
+  -- Preset flows are shared tables. Nested tables like confirm/post_select/sfx
+  -- must be copied per-call or one NPC's confirm_format leaks into others.
+  if type(base.confirm) == "table" then base.confirm = shallow_copy(base.confirm) end
+  if type(base.post_select) == "table" then base.post_select = shallow_copy(base.post_select) end
+  if type(base.sfx) == "table" then base.sfx = shallow_copy(base.sfx) end
+
   base.confirm = base.confirm or {}
   base.post_select = base.post_select or {}
   base.sfx = base.sfx or {}
 
   return base
 end
+
 
 local function resolve_sfx(cfg, menu_cfg)
   -- menu_cfg.sfx can be:
@@ -549,16 +557,17 @@ function Talk.shop_menu(player_id, bot_name, cfg, shop_cfg)
     texts.spend_failed or
     "Woah— your monies changed.{p_0.5} Try again!"
 
-  local function play_error_sfx(ctx)
-    local path = ctx and ctx.flow and ctx.flow.sfx and (ctx.flow.sfx.close or ctx.flow.sfx.desc)
-    if not path then return end
-    Net.provide_asset_for_player(player_id, path)
-    if Net.play_sound_for_player then
-      pcall(function() Net.play_sound_for_player(player_id, path) end)
-    elseif Net.play_sound then
-      pcall(function() Net.play_sound(path) end)
+    local function play_error_sfx(_ctx)
+      local path = shop_cfg.error_sfx_path or "/server/assets/net-games/sfx/card_error.ogg"
+      Net.provide_asset_for_player(player_id, path)
+
+      if Net.play_sound_for_player then
+        pcall(function() Net.play_sound_for_player(player_id, path) end)
+      elseif Net.play_sound then
+        pcall(function() Net.play_sound(path) end)
+      end
     end
-  end
+
 
   local grant      = shop_cfg.grant or { kind = "hp_mem" }
   local grant_kind = (type(grant) == "table" and tostring(grant.kind or "hp_mem")) or "hp_mem"
