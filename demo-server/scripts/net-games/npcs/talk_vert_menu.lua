@@ -521,7 +521,7 @@ function TalkVertMenu.open(player_id, bot_name, talk_cfg, menu_cfg)
       end
 
       local choice_id = (choice and choice.id) or index
-      local choice_text = tostring(choice and choice.text or "???")
+      local choice_text = tostring(choice and (choice.confirm_text or choice.text) or "???")
 
       --=====================================================
       -- EXIT path (Pink parity: only close sfx once, defer goodbye)

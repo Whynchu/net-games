@@ -514,7 +514,11 @@ function Talk.shop_menu(player_id, bot_name, cfg, shop_cfg)
   local options = {}
   for qty = 1, max_qty do
     local cost = qty * price_per
-    local o = { id = qty, text = format_row(qty, cost) }
+    local o = {
+      id = qty,
+      text = format_row(qty, cost), -- keep padded list text
+      confirm_text = string.format("%s%d for %d$", label, qty, cost), -- clean confirm text
+    }
 
     if art and art[qty] then
       local a = art[qty]
